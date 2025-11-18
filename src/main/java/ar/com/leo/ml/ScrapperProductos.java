@@ -89,6 +89,7 @@ public class ScrapperProductos {
             }
 
             // Creo nuevo Excel vacío
+            System.out.println("Generando excel...");
             Workbook workbook = new XSSFWorkbook();
             Sheet sheet = workbook.createSheet("Productos");
 
@@ -131,7 +132,7 @@ public class ScrapperProductos {
 
             workbook.close();
 
-            System.out.println("✅ Archivo generado: " + excelPath);
+            System.out.println("Archivo generado: " + excelPath);
         } else {
             System.out.println("Ingresa Cookies válidas.");
         }
