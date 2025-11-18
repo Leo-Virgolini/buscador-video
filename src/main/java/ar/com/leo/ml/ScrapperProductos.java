@@ -2,9 +2,8 @@ package ar.com.leo.ml;
 
 import ar.com.leo.Util;
 import ar.com.leo.ml.model.Producto;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.File;
@@ -35,7 +34,7 @@ public class ScrapperProductos {
 
     public static void main(String[] args) throws IOException, URISyntaxException, InterruptedException {
 
-//        System.out.println(verificarVideo("https://www.mercadolibre.com.ar/pinza-multiuso-cocina-punta-silicona-30-cm-parrillera-acero/p/MLA26223658?pdp_filters=item_id:MLA1385111157"));
+//        System.out.println(verificarVideo("https://articulo.mercadolibre.com.ar/MLA-1123857965-frapera-hielera-oval-chapa-galvanizado-botellas-_JM"));
 
         final String jarDir = Util.getJarFolder();
         System.setProperty("logPath", jarDir + File.separator + "logs");
@@ -45,8 +44,10 @@ public class ScrapperProductos {
         System.out.print("Pegá tus cookies de Mercado Libre: ");
         COOKIE_HEADER = scanner.nextLine();
 
-        if (!COOKIE_HEADER.isBlank()) {
-            System.out.println("Cookies capturadas: " + COOKIE_HEADER);
+        final boolean cookiesValidas = cookiesValidas();
+
+        if (!COOKIE_HEADER.isBlank() && cookiesValidas) {
+            System.out.println("Cookies capturadas");
 
             final List<Producto> productoList = obtenerDatos();
 
@@ -92,6 +93,10 @@ public class ScrapperProductos {
             Workbook workbook = new XSSFWorkbook();
             Sheet sheet = workbook.createSheet("Productos");
 
+            // Estilos
+            CellStyle headerStyle = crearHeaderStyle(workbook);
+            CellStyle centeredStyle = crearCenteredStyle(workbook);
+
             // ==========================
             //  Encabezados
             // ==========================
@@ -102,6 +107,7 @@ public class ScrapperProductos {
             header.createCell(3).setCellValue("VIDEOS");
             header.createCell(4).setCellValue("SKU");
             header.createCell(5).setCellValue("URL");
+            aplicarStyleFila(header, headerStyle);
 
             // ==========================
             //  Cargar productos
@@ -115,10 +121,11 @@ public class ScrapperProductos {
                 row.createCell(3).setCellValue(p.videoId.toString());
                 row.createCell(4).setCellValue(getSku(p.attributes)); // SKU
                 row.createCell(5).setCellValue(p.permalink);
+                aplicarStyleFila(row, centeredStyle);
             }
 
             // Ajuste automático
-            for (int i = 0; i <= 4; i++) {
+            for (int i = 0; i <= 5; i++) {
                 sheet.autoSizeColumn(i);
             }
 
@@ -133,8 +140,9 @@ public class ScrapperProductos {
 
             System.out.println("Archivo generado: " + excelPath);
         } else {
-            System.out.println("Ingresa Cookies válidas.");
+            System.out.println("Cookies inválidas.");
         }
+
     }
 
     private static String verificarVideo(String url) {
@@ -236,6 +244,53 @@ public class ScrapperProductos {
         return productoList;
     }
 
+    public static boolean cookiesValidas() {
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.NEVER) // importante
+                    .build();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://www.mercadolibre.com.ar/pampa/profile"))
+                    .header("User-Agent", "Mozilla/5.0")
+                    .header("Cookie", COOKIE_HEADER)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            int status = response.statusCode();
+
+            System.out.println("status: " + status);
+            System.out.println("response: " + response);
+
+            // ============================
+            //  VALIDACIONES DE LOGIN
+            // ============================
+
+            // 302 → redirige al login → NO logeado
+            if (status == 302) return false;
+
+            // 401 o 403 → NO autorizado → NO logeado
+            if (status == 401 || status == 403) return false;
+
+            // 200 → verificar contenido
+            if (status == 200) {
+                String body = response.body();
+                // si contiene datos personales → usuario logeado
+                if (body.contains("myaccount") || body.contains("Mi cuenta") || body.contains("profile")) {
+                    return true;
+                }
+            }
+
+            return false;
+
+        } catch (Exception e) {
+            System.err.println("Error verificando cookies: " + e.getMessage());
+            return false;
+        }
+    }
+
     public static String getSku(List<Producto.Attribute> attributes) {
         for (Producto.Attribute a : attributes) {
             if ("SELLER_SKU".equals(a.id)) {
@@ -247,6 +302,40 @@ public class ScrapperProductos {
             }
         }
         return null;
+    }
+
+    private static CellStyle crearHeaderStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+
+        // Negrita
+        XSSFFont font = ((XSSFWorkbook) workbook).createFont();
+        font.setBold(true);
+        style.setFont(font);
+
+        // Fondo gris claro
+        style.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+        // Centrados
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(VerticalAlignment.CENTER);
+
+        return style;
+    }
+
+    private static CellStyle crearCenteredStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(VerticalAlignment.CENTER);
+        return style;
+    }
+
+    private static void aplicarStyleFila(Row row, CellStyle style) {
+        for (int i = 0; i < row.getLastCellNum(); i++) {
+            if (row.getCell(i) != null) {
+                row.getCell(i).setCellStyle(style);
+            }
+        }
     }
 
 }
