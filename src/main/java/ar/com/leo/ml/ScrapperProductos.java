@@ -54,9 +54,8 @@ public class ScrapperProductos {
             System.out.println("Obteniendo videos...");
             for (Producto producto : productoList) {
                 executor.submit(() -> {
-                    String tieneVideo = verificarVideo(producto.permalink);
-                    System.out.println("URL: " + producto.permalink + " - Tiene video: " + tieneVideo);
-                    producto.videoId = tieneVideo;
+                    producto.videoId = verificarVideo(producto.permalink);
+                    System.out.println("URL: " + producto.permalink + " - Tiene video: " + producto.videoId);
                 });
             }
             executor.shutdown();
