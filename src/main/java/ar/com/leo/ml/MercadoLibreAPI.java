@@ -28,8 +28,8 @@ public class MercadoLibreAPI {
 
     private static final Path BASE_SECRET_DIR = Paths.get(System.getenv("PROGRAMDATA"), "SuperMaster", "secrets");
     private static final Logger logger = LogManager.getLogger(MercadoLibreAPI.class);
-    private static final Path MERCADOLIBRE_FILE;
-    private static final Path TOKEN_FILE;
+    private static final Path MERCADOLIBRE_FILE = BASE_SECRET_DIR.resolve("ml_credentials.json");
+    private static final Path TOKEN_FILE = BASE_SECRET_DIR.resolve("ml_tokens.json");
     private static final Object TOKEN_LOCK = new Object();
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final HttpClient httpClient = HttpClient.newHttpClient();
@@ -37,10 +37,6 @@ public class MercadoLibreAPI {
     private static MLCredentials mlCredentials;
     private static TokensML tokens;
 
-    static {
-        MERCADOLIBRE_FILE = BASE_SECRET_DIR.resolve("ml_credentials.json");
-        TOKEN_FILE = BASE_SECRET_DIR.resolve("ml_tokens.json");
-    }
 
     public static String getUserId() throws IOException {
         MercadoLibreAPI.verificarTokens();
