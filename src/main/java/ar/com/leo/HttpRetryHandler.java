@@ -9,11 +9,14 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 public class HttpRetryHandler {
 
+    public static final Path BASE_SECRET_DIR = Paths.get(System.getenv("PROGRAMDATA"), "SuperMaster", "secrets");
     private static final Logger logger = LogManager.getLogger(HttpRetryHandler.class);
     private static final int MAX_RETRIES = 3; // cantidad máxima de reintentos
     private final long BASE_WAIT_MS; // espera inicial

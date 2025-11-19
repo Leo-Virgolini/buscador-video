@@ -18,15 +18,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 import java.util.function.Supplier;
 
+import static ar.com.leo.HttpRetryHandler.BASE_SECRET_DIR;
+
 public class MercadoLibreAPI {
 
-    private static final Path BASE_SECRET_DIR = Paths.get(System.getenv("PROGRAMDATA"), "SuperMaster", "secrets");
     private static final Logger logger = LogManager.getLogger(MercadoLibreAPI.class);
     private static final Path MERCADOLIBRE_FILE = BASE_SECRET_DIR.resolve("ml_credentials.json");
     private static final Path TOKEN_FILE = BASE_SECRET_DIR.resolve("ml_tokens.json");
