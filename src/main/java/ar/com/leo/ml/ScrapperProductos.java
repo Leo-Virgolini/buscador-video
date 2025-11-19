@@ -2,6 +2,8 @@ package ar.com.leo.ml;
 
 import ar.com.leo.Util;
 import ar.com.leo.ml.model.Producto;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -25,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 
 public class ScrapperProductos {
 
+    private static final Logger logger = LogManager.getLogger(ScrapperProductos.class);
     private static final int MAX_THREADS = 5; // controla cuántas requests simultáneas
     private static final int TIMEOUT_SECONDS = 15;
     private static final String BUSQUEDA = "alt=\"clip-icon\"";
@@ -34,29 +37,29 @@ public class ScrapperProductos {
 
     public static void main(String[] args) throws IOException, URISyntaxException, InterruptedException {
 
-//        System.out.println(verificarVideo("https://articulo.mercadolibre.com.ar/MLA-1123857965-frapera-hielera-oval-chapa-galvanizado-botellas-_JM"));
+//        logger.info(verificarVideo("https://articulo.mercadolibre.com.ar/MLA-1123857965-frapera-hielera-oval-chapa-galvanizado-botellas-_JM"));
 
         final String jarDir = Util.getJarFolder();
         System.setProperty("logPath", jarDir + File.separator + "logs");
 
         Scanner scanner = new Scanner(System.in);
-        System.out.println("Abre el navegador -> F12 -> Ir a Mercado Libre (logeado) -> Presionar en Network -> Click en el primer resultado -> Headers -> Abrir Request Headers -> Buscar Cookie -> Copiar todo");
+        logger.info("Abre el navegador -> F12 -> Ir a Mercado Libre (logeado) -> Presionar en Network -> Click en el primer resultado -> Headers -> Abrir Request Headers -> Buscar Cookie -> Copiar todo");
         System.out.print("Pegá tus cookies de Mercado Libre: ");
         COOKIE_HEADER = scanner.nextLine();
 
         final boolean cookiesValidas = cookiesValidas();
 
         if (!COOKIE_HEADER.isBlank() && cookiesValidas) {
-            System.out.println("Cookies capturadas");
+            logger.info("Cookies capturadas");
 
             final List<Producto> productoList = obtenerDatos();
 
             ExecutorService executor = Executors.newFixedThreadPool(MAX_THREADS);
-            System.out.println("Obteniendo videos...");
+            logger.info("Obteniendo videos...");
             for (Producto producto : productoList) {
                 executor.submit(() -> {
                     producto.videoId = verificarVideo(producto.permalink);
-                    System.out.println("URL: " + producto.permalink + " - Tiene video: " + producto.videoId);
+                    logger.info("URL: " + producto.permalink + " - Tiene video: " + producto.videoId);
                 });
             }
             executor.shutdown();
@@ -89,7 +92,7 @@ public class ScrapperProductos {
             }
 
             // Creo nuevo Excel vacío
-            System.out.println("Generando excel...");
+            logger.info("Generando excel...");
             Workbook workbook = new XSSFWorkbook();
             Sheet sheet = workbook.createSheet("Productos");
 
@@ -138,9 +141,9 @@ public class ScrapperProductos {
 
             workbook.close();
 
-            System.out.println("Archivo generado: " + excelPath);
+            logger.info("Archivo generado: " + excelPath);
         } else {
-            System.out.println("Cookies inválidas.");
+            logger.info("Cookies inválidas.");
         }
 
     }
@@ -181,7 +184,7 @@ public class ScrapperProductos {
                             String newUrl = html.substring(idx + "Redirecting to ".length()).replace("</p>", "").trim();
                             // Reintentar con la nueva URL (si cambió)
                             if (!newUrl.equals(request.uri().toString())) {
-                                System.out.println("URL vieja: " + url + " - URL actualizada: " + newUrl);
+                                logger.info("URL vieja: " + url + " - URL actualizada: " + newUrl);
                                 return verificarVideo(newUrl);
                             }
                         }
@@ -192,14 +195,14 @@ public class ScrapperProductos {
                     return "NO EXISTE";
                 case 403:
                 case 424:
-                    System.out.println("Too many requests.");
+                    logger.info("Too many requests.");
                     Thread.sleep(60000);
                     return verificarVideo(url);
                 case 500:
                 case 502:
                 case 503:
                 case 504:
-                    System.out.println("Internal server error.");
+                    logger.info("Internal server error.");
                     Thread.sleep(5000);
                     return verificarVideo(url);
                 default:
@@ -218,15 +221,15 @@ public class ScrapperProductos {
         MercadoLibreAPI.inicializar();
 
         final String userId = MercadoLibreAPI.getUserId();
-        System.out.println("User ID: " + userId);
+        logger.info("User ID: " + userId);
 
-        System.out.println("Obteniendo MLAs de todos los productos...");
+        logger.info("Obteniendo MLAs de todos los productos...");
         final List<String> productos = MercadoLibreAPI.obtenerTodosLosItemsId(userId);
-        System.out.println("Total de Productos: " + productos.size());
+        logger.info("Total de Productos: " + productos.size());
 
         final List<Producto> productoList = Collections.synchronizedList(new ArrayList<>());
 
-        System.out.println("Obteniendo estado, sku, cantidad de imágenes y urls de los productos...");
+        logger.info("Obteniendo estado, sku, cantidad de imágenes y urls de los productos...");
         ExecutorService executor = Executors.newFixedThreadPool(10);
         for (String mla : productos) {
             executor.submit(() -> {
@@ -261,8 +264,8 @@ public class ScrapperProductos {
 
             int status = response.statusCode();
 
-            System.out.println("status: " + status);
-            System.out.println("response: " + response);
+            logger.info("status: " + status);
+            logger.info("response: " + response);
 
             // ============================
             //  VALIDACIONES DE LOGIN

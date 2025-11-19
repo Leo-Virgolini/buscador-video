@@ -1,17 +1,17 @@
 package ar.com.leo.ml;
 
-import ar.com.leo.AppLogger;
 import ar.com.leo.HttpRetryHandler;
 import ar.com.leo.ml.model.MLCredentials;
 import ar.com.leo.ml.model.Producto;
 import ar.com.leo.ml.model.TokensML;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -24,10 +24,10 @@ import java.util.List;
 import java.util.Scanner;
 import java.util.function.Supplier;
 
-import static ar.com.leo.Util.getJarFolder;
-
 public class MercadoLibreAPI {
 
+    private static final Path BASE_SECRET_DIR = Paths.get(System.getenv("PROGRAMDATA"), "SuperMaster", "secrets");
+    private static final Logger logger = LogManager.getLogger(MercadoLibreAPI.class);
     private static final Path MERCADOLIBRE_FILE;
     private static final Path TOKEN_FILE;
     private static final Object TOKEN_LOCK = new Object();
@@ -38,12 +38,8 @@ public class MercadoLibreAPI {
     private static TokensML tokens;
 
     static {
-        try {
-            MERCADOLIBRE_FILE = Paths.get(getJarFolder(), "secrets", "ml_credentials.json");
-            TOKEN_FILE = Paths.get(getJarFolder(), "secrets", "ml_tokens.json");
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        }
+        MERCADOLIBRE_FILE = BASE_SECRET_DIR.resolve("ml_credentials.json");
+        TOKEN_FILE = BASE_SECRET_DIR.resolve("ml_tokens.json");
     }
 
     public static String getUserId() throws IOException {
@@ -74,7 +70,7 @@ public class MercadoLibreAPI {
 
         HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
         if (response.statusCode() != 200) {
-            AppLogger.warn("Error obteniendo datos de la aplicación: " + response.body());
+            logger.warn("Error obteniendo datos de la aplicación: " + response.body());
         }
 
         JsonNode datos = mapper.readTree(response.body());
@@ -104,7 +100,7 @@ public class MercadoLibreAPI {
             HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
 
             if (response.statusCode() != 200) {
-                AppLogger.warn("ML - Error al obtener items: " + response.body());
+                logger.warn("ML - Error al obtener items: " + response.body());
                 return null;
             }
 
@@ -151,7 +147,7 @@ public class MercadoLibreAPI {
         HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
 
         if (response.statusCode() != 200) {
-            AppLogger.warn("ML - No se pudo obtener item: " + itemId + ": " + response.body());
+            logger.warn("ML - No se pudo obtener item: " + itemId + ": " + response.body());
 //            throw new IOException("Error al obtener el producto: " + itemId  + response.body());
         }
 
@@ -172,7 +168,7 @@ public class MercadoLibreAPI {
         HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
 
         if (response.statusCode() != 200) {
-            AppLogger.warn("ML - Error al obtener el producto: " + response.body());
+            logger.warn("ML - Error al obtener el producto: " + response.body());
             return null;
         }
 
@@ -185,14 +181,14 @@ public class MercadoLibreAPI {
     public static boolean inicializar() {
         mlCredentials = cargarMLCredentials();
         if (mlCredentials == null) {
-            AppLogger.warn("ML - No se encontró el archivo de credenciales.");
+            logger.warn("ML - No se encontró el archivo de credenciales.");
             return false;
         }
 
         tokens = cargarTokens();
         if (tokens == null) {
             // No hay tokens → pedir autorización
-            AppLogger.info("ML - No hay tokens de ML, solicitando autorización...");
+            logger.info("ML - No hay tokens de ML, solicitando autorización...");
             final String code = pedirCodeManual();
             tokens = obtenerAccessToken(code);
             guardarTokens(tokens);
@@ -215,14 +211,14 @@ public class MercadoLibreAPI {
                 return; // otro thread ya lo renovó
             }
 
-            AppLogger.info("ML - Access token expirado, renovando...");
+            logger.info("ML - Access token expirado, renovando...");
             try {
                 tokens = refreshAccessToken(tokens.refreshToken);
                 tokens.issuedAt = System.currentTimeMillis();
                 guardarTokens(tokens);
-                AppLogger.info("ML - Token renovado correctamente.");
+                logger.info("ML - Token renovado correctamente.");
             } catch (Exception e) {
-                AppLogger.warn("ML - Error al renovar token: " + e.getMessage());
+                logger.warn("ML - Error al renovar token: " + e.getMessage());
             }
         }
     }
@@ -233,7 +229,7 @@ public class MercadoLibreAPI {
             File f = MERCADOLIBRE_FILE.toFile();
             return f.exists() ? mapper.readValue(f, MLCredentials.class) : null;
         } catch (Exception e) {
-            AppLogger.warn("Error cargando credenciales ML: " + e.getMessage());
+            logger.warn("Error cargando credenciales ML: " + e.getMessage());
             return null;
         }
     }
@@ -243,7 +239,7 @@ public class MercadoLibreAPI {
             File f = TOKEN_FILE.toFile();
             return f.exists() ? mapper.readValue(f, TokensML.class) : null;
         } catch (Exception e) {
-            AppLogger.warn("Error cargando tokens ML: " + e.getMessage());
+            logger.warn("Error cargando tokens ML: " + e.getMessage());
             return null;
         }
     }
@@ -251,9 +247,9 @@ public class MercadoLibreAPI {
     private static void guardarTokens(TokensML tokens) {
         try {
             mapper.writerWithDefaultPrettyPrinter().writeValue(TOKEN_FILE.toFile(), tokens);
-            AppLogger.info("ML - Tokens guardados en " + TOKEN_FILE);
+            logger.info("ML - Tokens guardados en " + TOKEN_FILE);
         } catch (Exception e) {
-            AppLogger.warn("Error guardando tokens ML: " + e.getMessage());
+            logger.warn("Error guardando tokens ML: " + e.getMessage());
         }
     }
 
@@ -262,9 +258,9 @@ public class MercadoLibreAPI {
                 + "&client_id=" + mlCredentials.clientId
                 + "&redirect_uri=" + mlCredentials.redirectUri;
 
-        AppLogger.info("Abrí esta URL en tu navegador y autorizá la app:");
-        AppLogger.info(authURL);
-        AppLogger.info("Pegá el code que recibiste:");
+        logger.info("Abrí esta URL en tu navegador y autorizá la app:");
+        logger.info(authURL);
+        logger.info("Pegá el code que recibiste:");
 
         Scanner scanner = new Scanner(System.in);
         return scanner.nextLine().trim();

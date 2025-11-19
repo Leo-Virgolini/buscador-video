@@ -2,6 +2,8 @@ package ar.com.leo;
 
 import ar.com.leo.ml.MercadoLibreAPI;
 import com.google.common.util.concurrent.RateLimiter;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
@@ -12,6 +14,7 @@ import java.util.function.Supplier;
 
 public class HttpRetryHandler {
 
+    private static final Logger logger = LogManager.getLogger(HttpRetryHandler.class);
     private static final int MAX_RETRIES = 3; // cantidad máxima de reintentos
     private final long BASE_WAIT_MS; // espera inicial
     private final RateLimiter rateLimiter; // ✅ limitador
@@ -41,7 +44,7 @@ public class HttpRetryHandler {
 
                 // ---- Token expirado ----
                 if (status == 401) {
-                    AppLogger.warn("401 Unauthorized → actualizando tokens...");
+                    logger.warn("401 Unauthorized → actualizando tokens...");
                     MercadoLibreAPI.verificarTokens();
                     continue; // volverá a crear el request con token nuevo
                 }
@@ -49,7 +52,7 @@ public class HttpRetryHandler {
                 // ---- Error de concurrencia ----
                 if (status == 409 || status == 423) {
                     long waitMs = BASE_WAIT_MS + ThreadLocalRandom.current().nextInt(200, 800);
-                    AppLogger.warn("409 Conflict (KVS). Retry en " + waitMs + " ms...");
+                    logger.warn("409 Conflict (KVS). Retry en " + waitMs + " ms...");
                     Thread.sleep(waitMs);
                     continue;
                 }
@@ -57,7 +60,7 @@ public class HttpRetryHandler {
                 // ---- Too Many Requests ----
                 if (status == 429) {
                     long waitMs = parseRetryAfter(response, BASE_WAIT_MS);
-                    AppLogger.warn("429 Too Many Requests. Retry en " + waitMs + " ms...");
+                    logger.warn("429 Too Many Requests. Retry en " + waitMs + " ms...");
                     Thread.sleep(waitMs);
                     continue;
                 }
@@ -65,7 +68,7 @@ public class HttpRetryHandler {
                 // ---- Errores de servidor ----
                 if (status >= 500 && status < 600) {
                     long waitMs = BASE_WAIT_MS * (long) Math.pow(2, attempt - 1);
-                    AppLogger.warn("5xx Error. Retry en " + waitMs + " ms...");
+                    logger.warn("5xx Error. Retry en " + waitMs + " ms...");
                     Thread.sleep(waitMs);
                     continue;
                 }
@@ -75,7 +78,7 @@ public class HttpRetryHandler {
 
             } catch (IOException e) {
                 long waitMs = BASE_WAIT_MS * (long) Math.pow(2, attempt - 1);
-                AppLogger.warn("IOException. Retry en " + waitMs + " ms... (" + attempt + "/" + MAX_RETRIES + ")");
+                logger.warn("IOException. Retry en " + waitMs + " ms... (" + attempt + "/" + MAX_RETRIES + ")");
                 try {
                     Thread.sleep(waitMs);
                 } catch (InterruptedException ex) {
