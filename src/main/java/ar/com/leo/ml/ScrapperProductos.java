@@ -11,7 +11,6 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -34,7 +33,7 @@ public class ScrapperProductos {
     private static final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(TIMEOUT_SECONDS)).build();
     private static String COOKIE_HEADER;
 
-    public static void main(String[] args) throws IOException, URISyntaxException, InterruptedException {
+    public static void main(String[] args) throws IOException, InterruptedException {
 
 //        logger.info(verificarVideo("https://articulo.mercadolibre.com.ar/MLA-1123857965-frapera-hielera-oval-chapa-galvanizado-botellas-_JM"));
 
@@ -121,6 +120,8 @@ public class ScrapperProductos {
             // ==========================
             try (FileOutputStream fos = new FileOutputStream(excelPath.toFile())) {
                 workbook.write(fos);
+            } catch (Exception ex) {
+                logger.error(ex.getMessage(), ex);
             }
 
             workbook.close();
