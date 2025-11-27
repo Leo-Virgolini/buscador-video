@@ -6,20 +6,24 @@ import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Row;
 
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public class Util {
 
-    public static String getJarFolder() throws URISyntaxException {
-        URI uri = Util.class.getProtectionDomain()
-                .getCodeSource()
-                .getLocation()
-                .toURI();
+    public static String getJarFolder() {
+        try {
+            URI uri = Util.class.getProtectionDomain()
+                    .getCodeSource()
+                    .getLocation()
+                    .toURI();
 
-        Path path = Paths.get(uri); // esto soporta UNC
-        return path.getParent().toString();
+            Path path = Paths.get(uri).toAbsolutePath();
+            return path.getParent().toString();
+
+        } catch (Exception e) {
+            throw new RuntimeException("No se pudo resolver la ruta del JAR", e);
+        }
     }
 
     // Función que detecta si una fila está vacía

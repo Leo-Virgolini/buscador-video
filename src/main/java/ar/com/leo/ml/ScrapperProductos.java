@@ -8,7 +8,6 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -16,10 +15,11 @@ import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,15 +32,11 @@ public class ScrapperProductos {
     private static final int TIMEOUT_SECONDS = 15;
     private static final String BUSQUEDA = "alt=\"clip-icon\"";
     private static final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(TIMEOUT_SECONDS)).build();
-    // Poner cookie de ML: obtener desde el browser al estar logeado
     private static String COOKIE_HEADER;
 
     public static void main(String[] args) throws IOException, URISyntaxException, InterruptedException {
 
 //        logger.info(verificarVideo("https://articulo.mercadolibre.com.ar/MLA-1123857965-frapera-hielera-oval-chapa-galvanizado-botellas-_JM"));
-
-        final String jarDir = Util.getJarFolder();
-        System.setProperty("logPath", jarDir + File.separator + "logs");
 
         Scanner scanner = new Scanner(System.in);
         logger.info("Abre el navegador -> F12 -> Ir a Mercado Libre (logeado) -> Presionar en Network -> Click en el primer resultado -> Headers -> Abrir Request Headers -> Buscar Cookie -> Copiar todo");
@@ -77,19 +73,7 @@ public class ScrapperProductos {
             );
 
             // Excel
-            String jarFolder;
-            try {
-                jarFolder = Util.getJarFolder();
-            } catch (URISyntaxException e) {
-                throw new RuntimeException("No se pudo resolver la ruta del .jar", e);
-            }
-
-            Path excelPath = Paths.get(jarFolder, "productos.xlsx");
-
-            // Si existe, lo borro
-            if (Files.exists(excelPath)) {
-                Files.delete(excelPath);
-            }
+            final Path excelPath = Paths.get(Util.getJarFolder(), "Productos" + DateTimeFormatter.ofPattern("dd-MM-yy HH'h' mm'm' ss's'").format(LocalDateTime.now()) + ".xlsx");
 
             // Creo nuevo Excel vacío
             logger.info("Generando excel...");
@@ -140,7 +124,6 @@ public class ScrapperProductos {
             }
 
             workbook.close();
-
             logger.info("Archivo generado: " + excelPath);
         } else {
             logger.info("Cookies inválidas.");
