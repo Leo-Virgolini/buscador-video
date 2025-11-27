@@ -72,7 +72,7 @@ public class ScrapperProductos {
             );
 
             // Excel
-            final Path excelPath = Paths.get(Util.getJarFolder(), "Productos" + DateTimeFormatter.ofPattern("dd-MM-yy HH'h' mm'm' ss's'").format(LocalDateTime.now()) + ".xlsx");
+            final Path excelPath = Paths.get(Util.getJarFolder(), "Productos " + DateTimeFormatter.ofPattern("(dd-MM-yy HH'h' mm'm' ss's')").format(LocalDateTime.now()) + ".xlsx");
 
             // Creo nuevo Excel vacío
             logger.info("Generando excel...");

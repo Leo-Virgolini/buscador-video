@@ -37,7 +37,6 @@ public class MercadoLibreAPI {
     private static MLCredentials mlCredentials;
     private static TokensML tokens;
 
-
     public static String getUserId() throws IOException {
         MercadoLibreAPI.verificarTokens();
         final String url = "https://api.mercadolibre.com/users/me";
