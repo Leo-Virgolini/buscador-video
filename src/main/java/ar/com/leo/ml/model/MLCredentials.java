@@ -13,7 +13,4 @@ public class MLCredentials {
     @JsonProperty("REDIRECT_URI")
     public String redirectUri;
 
-    @JsonProperty("PRECIO_ENVIO_GRATIS")
-    public double precioEnvioGratis;
-
 }

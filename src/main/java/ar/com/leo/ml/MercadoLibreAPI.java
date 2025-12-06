@@ -258,7 +258,9 @@ public class MercadoLibreAPI {
         logger.info("Pegá el code que recibiste:");
 
         Scanner scanner = new Scanner(System.in);
-        return scanner.nextLine().trim();
+        String code = scanner.nextLine().trim();
+        scanner.close();
+        return code;
     }
 
     private static TokensML obtenerAccessToken(String code) {
