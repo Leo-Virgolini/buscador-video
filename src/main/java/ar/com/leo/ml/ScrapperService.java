@@ -107,8 +107,14 @@ public class ScrapperService extends Service<Void> {
         } catch (Exception ex) {
             throw new IllegalStateException("El excel está en uso. Cerralo antes de continuar.");
         }
+
+        // Obtener rutas absolutas (funciona con rutas locales y de red UNC)
         String carpetaImagenesPath = carpetaImagenes.getAbsolutePath();
         String carpetaVideosPath = carpetaVideos.getAbsolutePath();
+
+        // Validar que las carpetas sean accesibles antes de continuar
+        validarAccesoCarpeta(carpetaImagenesPath, "imágenes");
+        validarAccesoCarpeta(carpetaVideosPath, "videos");
 
         if (cookiesValidas(cookieHeader)) {
             AppLogger.info("Cookies válidas.");
@@ -424,6 +430,44 @@ public class ScrapperService extends Service<Void> {
             return null; // SKU muy corto, no se puede buscar
         }
         return skuUpper.substring(0, 7);
+    }
+
+    /**
+     * Valida que una carpeta sea accesible (funciona con rutas locales y de red
+     * UNC).
+     * Lanza excepción si la carpeta no es accesible.
+     */
+    private static void validarAccesoCarpeta(String rutaCarpeta, String tipoCarpeta) {
+        try {
+            Path carpetaPath = Paths.get(rutaCarpeta).normalize();
+
+            if (!Files.exists(carpetaPath)) {
+                throw new IllegalArgumentException(
+                        "La carpeta de " + tipoCarpeta + " no existe: " + carpetaPath);
+            }
+
+            if (!Files.isDirectory(carpetaPath)) {
+                throw new IllegalArgumentException(
+                        "La ruta de " + tipoCarpeta + " no es un directorio: " + carpetaPath);
+            }
+
+            if (!Files.isReadable(carpetaPath)) {
+                throw new IllegalArgumentException(
+                        "No se tienen permisos de lectura en la carpeta de " + tipoCarpeta + ": " + carpetaPath);
+            }
+
+        } catch (java.nio.file.AccessDeniedException e) {
+            throw new IllegalArgumentException(
+                    "Acceso denegado a la carpeta de " + tipoCarpeta + ": " + rutaCarpeta, e);
+        } catch (java.nio.file.FileSystemException e) {
+            throw new IllegalArgumentException(
+                    "Error del sistema de archivos al acceder a la carpeta de " + tipoCarpeta +
+                            " (verifica conectividad de red si es una ruta UNC): " + rutaCarpeta,
+                    e);
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "Error al validar la carpeta de " + tipoCarpeta + ": " + rutaCarpeta, e);
+        }
     }
 
     private static CellStyle crearHeaderStyle(Workbook workbook) {
@@ -776,9 +820,24 @@ public class ScrapperService extends Service<Void> {
         }
 
         try {
-            Path carpetaPath = Paths.get(carpetaVideos);
-            if (!Files.exists(carpetaPath) || !Files.isDirectory(carpetaPath)) {
-                AppLogger.warn("La carpeta de videos no existe o no es un directorio: " + carpetaVideos);
+            // Normalizar la ruta para manejar rutas UNC (\\server\share) y rutas
+            // relativas/absolutas
+            Path carpetaPath = Paths.get(carpetaVideos).normalize();
+
+            // Verificar existencia y tipo (funciona con rutas locales y de red)
+            if (!Files.exists(carpetaPath)) {
+                AppLogger.warn("La carpeta de videos no existe: " + carpetaPath);
+                return 0;
+            }
+
+            if (!Files.isDirectory(carpetaPath)) {
+                AppLogger.warn("La ruta de videos no es un directorio: " + carpetaPath);
+                return 0;
+            }
+
+            // Verificar permisos de lectura (importante para rutas de red)
+            if (!Files.isReadable(carpetaPath)) {
+                AppLogger.warn("No se tienen permisos de lectura en la carpeta de videos: " + carpetaPath);
                 return 0;
             }
 
@@ -821,8 +880,17 @@ public class ScrapperService extends Service<Void> {
 
             return contador;
 
+        } catch (java.nio.file.AccessDeniedException e) {
+            AppLogger.warn("Acceso denegado a la carpeta de videos: " + carpetaVideos + " - " + e.getMessage());
+            return 0;
+        } catch (java.nio.file.FileSystemException e) {
+            // Errores comunes con rutas de red: conexión perdida, servidor no disponible,
+            // etc.
+            AppLogger.warn("Error del sistema de archivos al acceder a la carpeta de videos: " + carpetaVideos + " - "
+                    + e.getMessage());
+            return 0;
         } catch (IOException e) {
-            AppLogger.warn("Error al buscar videos en carpeta " + carpetaVideos + ": " + e.getMessage());
+            AppLogger.warn("Error de I/O al buscar videos en carpeta " + carpetaVideos + ": " + e.getMessage());
             return 0;
         }
     }
@@ -833,9 +901,24 @@ public class ScrapperService extends Service<Void> {
         }
 
         try {
-            Path carpetaPath = Paths.get(carpeta);
-            if (!Files.exists(carpetaPath) || !Files.isDirectory(carpetaPath)) {
-                AppLogger.warn("La carpeta no existe o no es un directorio: " + carpeta);
+            // Normalizar la ruta para manejar rutas UNC (\\server\share) y rutas
+            // relativas/absolutas
+            Path carpetaPath = Paths.get(carpeta).normalize();
+
+            // Verificar existencia y tipo (funciona con rutas locales y de red)
+            if (!Files.exists(carpetaPath)) {
+                AppLogger.warn("La carpeta no existe: " + carpetaPath);
+                return 0;
+            }
+
+            if (!Files.isDirectory(carpetaPath)) {
+                AppLogger.warn("La ruta no es un directorio: " + carpetaPath);
+                return 0;
+            }
+
+            // Verificar permisos de lectura (importante para rutas de red)
+            if (!Files.isReadable(carpetaPath)) {
+                AppLogger.warn("No se tienen permisos de lectura en la carpeta: " + carpetaPath);
                 return 0;
             }
 
@@ -877,8 +960,17 @@ public class ScrapperService extends Service<Void> {
 
             return contador;
 
+        } catch (java.nio.file.AccessDeniedException e) {
+            AppLogger.warn("Acceso denegado a la carpeta: " + carpeta + " - " + e.getMessage());
+            return 0;
+        } catch (java.nio.file.FileSystemException e) {
+            // Errores comunes con rutas de red: conexión perdida, servidor no disponible,
+            // etc.
+            AppLogger
+                    .warn("Error del sistema de archivos al acceder a la carpeta: " + carpeta + " - " + e.getMessage());
+            return 0;
         } catch (IOException e) {
-            AppLogger.warn("Error al buscar archivos en carpeta " + carpeta + ": " + e.getMessage());
+            AppLogger.warn("Error de I/O al buscar archivos en carpeta " + carpeta + ": " + e.getMessage());
             return 0;
         }
     }
