@@ -25,6 +25,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -456,14 +458,23 @@ public class ScrapperService extends Service<Void> {
                         "No se tienen permisos de lectura en la carpeta de " + tipoCarpeta + ": " + carpetaPath);
             }
 
-        } catch (java.nio.file.AccessDeniedException e) {
+            // Intentar listar el directorio para verificar acceso real (esto puede lanzar
+            // AccessDeniedException)
+            try (Stream<Path> test = Files.list(carpetaPath)) {
+                test.limit(1).count(); // Solo verificar que se puede acceder
+            }
+
+        } catch (AccessDeniedException e) {
             throw new IllegalArgumentException(
                     "Acceso denegado a la carpeta de " + tipoCarpeta + ": " + rutaCarpeta, e);
-        } catch (java.nio.file.FileSystemException e) {
+        } catch (FileSystemException e) {
             throw new IllegalArgumentException(
                     "Error del sistema de archivos al acceder a la carpeta de " + tipoCarpeta +
                             " (verifica conectividad de red si es una ruta UNC): " + rutaCarpeta,
                     e);
+        } catch (IOException e) {
+            throw new IllegalArgumentException(
+                    "Error de I/O al validar la carpeta de " + tipoCarpeta + ": " + rutaCarpeta, e);
         } catch (Exception e) {
             throw new IllegalArgumentException(
                     "Error al validar la carpeta de " + tipoCarpeta + ": " + rutaCarpeta, e);
@@ -845,6 +856,8 @@ public class ScrapperService extends Service<Void> {
             String skuUpper = sku.toUpperCase();
 
             // Buscar carpetas que coincidan con el SKU (primeros 7 caracteres)
+            // Las operaciones de I/O aquí pueden lanzar AccessDeniedException y
+            // FileSystemException
             try (Stream<Path> carpetas = Files.list(carpetaPath)) {
                 List<Path> carpetasSku = carpetas
                         .filter(Files::isDirectory)
@@ -880,10 +893,10 @@ public class ScrapperService extends Service<Void> {
 
             return contador;
 
-        } catch (java.nio.file.AccessDeniedException e) {
+        } catch (AccessDeniedException e) {
             AppLogger.warn("Acceso denegado a la carpeta de videos: " + carpetaVideos + " - " + e.getMessage());
             return 0;
-        } catch (java.nio.file.FileSystemException e) {
+        } catch (FileSystemException e) {
             // Errores comunes con rutas de red: conexión perdida, servidor no disponible,
             // etc.
             AppLogger.warn("Error del sistema de archivos al acceder a la carpeta de videos: " + carpetaVideos + " - "
@@ -925,6 +938,8 @@ public class ScrapperService extends Service<Void> {
             int contador = 0;
             String skuUpper = sku.toUpperCase();
 
+            // Las operaciones de I/O aquí pueden lanzar AccessDeniedException y
+            // FileSystemException
             try (Stream<Path> paths = Files.walk(carpetaPath)) {
                 contador = (int) paths
                         .filter(Files::isRegularFile)
@@ -960,10 +975,10 @@ public class ScrapperService extends Service<Void> {
 
             return contador;
 
-        } catch (java.nio.file.AccessDeniedException e) {
+        } catch (AccessDeniedException e) {
             AppLogger.warn("Acceso denegado a la carpeta: " + carpeta + " - " + e.getMessage());
             return 0;
-        } catch (java.nio.file.FileSystemException e) {
+        } catch (FileSystemException e) {
             // Errores comunes con rutas de red: conexión perdida, servidor no disponible,
             // etc.
             AppLogger
