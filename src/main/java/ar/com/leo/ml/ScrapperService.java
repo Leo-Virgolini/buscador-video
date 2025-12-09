@@ -101,7 +101,9 @@ public class ScrapperService extends Service<Void> {
 
     public void run() throws Exception, IOException, InterruptedException {
 
+        // Verificar que el archivo no esté en uso
         try (RandomAccessFile raf = new RandomAccessFile(excelFile, "rw")) {
+            // Si se puede abrir, está disponible
         } catch (Exception ex) {
             throw new IllegalStateException("El excel está en uso. Cerralo antes de continuar.");
         }
@@ -164,17 +166,11 @@ public class ScrapperService extends Service<Void> {
                 int lastRowNum = scanSheet.getLastRowNum();
                 if (lastRowNum > 0) {
                     AppLogger.info("Limpiando " + lastRowNum + " filas existentes...");
-                    // Eliminar filas desde la última hasta la primera (excepto fila 0 que es el
-                    // encabezado)
-                    for (int i = lastRowNum; i > 0; i--) {
-                        Row row = scanSheet.getRow(i);
-                        if (row != null) {
-                            scanSheet.removeRow(row);
-                        }
-                    }
+                    // Usar shiftRows para eliminar todas las filas de una vez (más eficiente)
+                    scanSheet.shiftRows(1, lastRowNum, -lastRowNum);
                 }
 
-                // Estilos
+                // Estilos (se reutilizarán más adelante)
                 CellStyle headerStyle = crearHeaderStyle(workbook);
                 CellStyle centeredStyle = crearCenteredStyle(workbook);
 
@@ -219,16 +215,12 @@ public class ScrapperService extends Service<Void> {
                     aplicarStyleFila(row, centeredStyle);
                 }
 
-                // Ajuste automático
-                for (int i = 0; i <= 10; i++) {
-                    scanSheet.autoSizeColumn(i);
-                }
-
                 // ==========================
                 // Buscar archivos en carpetas y actualizar Excel (sin guardar aún)
                 // ==========================
                 AppLogger.info("Buscando archivos en carpetas...");
-                actualizarExcelConArchivos(workbook, scanSheet, carpetaImagenesPath, carpetaVideosPath);
+                actualizarExcelConArchivos(workbook, scanSheet, carpetaImagenesPath, carpetaVideosPath, headerStyle,
+                        centeredStyle);
 
                 // ==========================
                 // Guardar archivo una sola vez al final
@@ -548,33 +540,16 @@ public class ScrapperService extends Service<Void> {
     }
 
     private static void actualizarExcelConArchivos(Workbook workbook, Sheet scanSheet, String carpetaImagenes,
-            String carpetaVideos) {
+            String carpetaVideos, CellStyle headerStyle, CellStyle centeredStyle) {
         try {
 
             // Verificar si ya existen las columnas, si no, agregarlas
             Row header = scanSheet.getRow(0);
-            int colImagenesCarpeta = -1;
-            int colVideosCarpeta = -1;
+            int colImagenesCarpeta = 7; // Columnas conocidas (ya están definidas arriba)
+            int colVideosCarpeta = 8;
 
-            // Buscar columnas existentes
-            for (int i = 0; i < header.getLastCellNum(); i++) {
-                Cell cell = header.getCell(i);
-                if (cell != null) {
-                    String value = cell.getStringCellValue();
-                    if ("IMAGENES EN CARPETA".equals(value)) {
-                        colImagenesCarpeta = i;
-                    } else if ("VIDEOS EN CARPETA".equals(value)) {
-                        colVideosCarpeta = i;
-                    }
-                }
-            }
-
-            // Aplicar estilo al header
-            CellStyle headerStyle = crearHeaderStyle(workbook);
+            // Aplicar estilo al header (reutilizando el estilo ya creado)
             aplicarStyleFila(header, headerStyle);
-
-            // Estilo para las celdas
-            CellStyle centeredStyle = crearCenteredStyle(workbook);
 
             // Procesar cada fila (empezando desde la 1, la 0 es el header)
             int colSku = 4; // Columna SKU
@@ -661,11 +636,15 @@ public class ScrapperService extends Service<Void> {
                 }
             }
 
-            // Ajustar ancho de columnas
+            // Ajustar ancho de columnas (solo las que pueden haber cambiado)
             scanSheet.autoSizeColumn(colImagenesCarpeta);
             scanSheet.autoSizeColumn(colVideosCarpeta);
             scanSheet.autoSizeColumn(colConclusionImagenes);
             scanSheet.autoSizeColumn(colConclusionVideos);
+            // Re-ajustar todas las columnas al final para asegurar que todo esté bien
+            for (int i = 0; i <= 10; i++) {
+                scanSheet.autoSizeColumn(i);
+            }
 
             AppLogger.info("Excel actualizado con información de archivos en carpetas.");
 
@@ -677,35 +656,39 @@ public class ScrapperService extends Service<Void> {
 
     private static String generarConclusionImagenes(Row row, int colImagenes, int colImagenesCarpeta) {
         try {
-            // Leer cantidad de imágenes en ML
+            // Leer cantidad de imágenes en ML (optimizado: leer directamente como número si
+            // es posible)
             int cantidadImagenesML = 0;
             Cell cellImagenes = row.getCell(colImagenes);
             if (cellImagenes != null) {
-                try {
-                    String valorImagenes = Util.getCellValue(cellImagenes);
-                    if (valorImagenes != null && !valorImagenes.isEmpty()) {
-                        cantidadImagenesML = Integer.parseInt(valorImagenes);
-                    }
-                } catch (Exception e) {
-                    // Si no es numérico, intentar leer como número directamente
-                    if (cellImagenes.getCellType() == CellType.NUMERIC) {
-                        cantidadImagenesML = (int) cellImagenes.getNumericCellValue();
+                if (cellImagenes.getCellType() == CellType.NUMERIC) {
+                    cantidadImagenesML = (int) cellImagenes.getNumericCellValue();
+                } else {
+                    try {
+                        String valorImagenes = Util.getCellValue(cellImagenes);
+                        if (valorImagenes != null && !valorImagenes.isEmpty()) {
+                            cantidadImagenesML = Integer.parseInt(valorImagenes);
+                        }
+                    } catch (Exception ignored) {
+                        // Si falla, queda en 0
                     }
                 }
             }
 
-            // Leer cantidad de imágenes en carpeta
+            // Leer cantidad de imágenes en carpeta (optimizado)
             int cantidadImagenesCarpeta = 0;
             Cell cellImagenesCarpeta = row.getCell(colImagenesCarpeta);
             if (cellImagenesCarpeta != null) {
-                try {
-                    String valorImagenesCarpeta = Util.getCellValue(cellImagenesCarpeta);
-                    if (valorImagenesCarpeta != null && !valorImagenesCarpeta.isEmpty()) {
-                        cantidadImagenesCarpeta = Integer.parseInt(valorImagenesCarpeta);
-                    }
-                } catch (Exception e) {
-                    if (cellImagenesCarpeta.getCellType() == CellType.NUMERIC) {
-                        cantidadImagenesCarpeta = (int) cellImagenesCarpeta.getNumericCellValue();
+                if (cellImagenesCarpeta.getCellType() == CellType.NUMERIC) {
+                    cantidadImagenesCarpeta = (int) cellImagenesCarpeta.getNumericCellValue();
+                } else {
+                    try {
+                        String valorImagenesCarpeta = Util.getCellValue(cellImagenesCarpeta);
+                        if (valorImagenesCarpeta != null && !valorImagenesCarpeta.isEmpty()) {
+                            cantidadImagenesCarpeta = Integer.parseInt(valorImagenesCarpeta);
+                        }
+                    } catch (Exception ignored) {
+                        // Si falla, queda en 0
                     }
                 }
             }
@@ -735,33 +718,36 @@ public class ScrapperService extends Service<Void> {
 
     private static String generarConclusionVideos(Row row, int colVideos, int colVideosCarpeta) {
         try {
-            // Leer si tiene video en ML
+            // Leer si tiene video en ML (optimizado)
             String tieneVideoStr = "NO";
             Cell cellVideos = row.getCell(colVideos);
             if (cellVideos != null) {
-                try {
-                    tieneVideoStr = Util.getCellValue(cellVideos);
-                } catch (Exception e) {
-                    // Si no se puede leer como string, intentar como string directo
-                    if (cellVideos.getCellType() == CellType.STRING) {
-                        tieneVideoStr = cellVideos.getStringCellValue();
+                if (cellVideos.getCellType() == CellType.STRING) {
+                    tieneVideoStr = cellVideos.getStringCellValue();
+                } else {
+                    try {
+                        tieneVideoStr = Util.getCellValue(cellVideos);
+                    } catch (Exception ignored) {
+                        // Si falla, queda "NO"
                     }
                 }
             }
             boolean tieneVideoML = "SI".equalsIgnoreCase(tieneVideoStr);
 
-            // Leer cantidad de videos en carpeta
+            // Leer cantidad de videos en carpeta (optimizado)
             int cantidadVideosCarpeta = 0;
             Cell cellVideosCarpeta = row.getCell(colVideosCarpeta);
             if (cellVideosCarpeta != null) {
-                try {
-                    String valorVideosCarpeta = Util.getCellValue(cellVideosCarpeta);
-                    if (valorVideosCarpeta != null && !valorVideosCarpeta.isEmpty()) {
-                        cantidadVideosCarpeta = Integer.parseInt(valorVideosCarpeta);
-                    }
-                } catch (Exception e) {
-                    if (cellVideosCarpeta.getCellType() == CellType.NUMERIC) {
-                        cantidadVideosCarpeta = (int) cellVideosCarpeta.getNumericCellValue();
+                if (cellVideosCarpeta.getCellType() == CellType.NUMERIC) {
+                    cantidadVideosCarpeta = (int) cellVideosCarpeta.getNumericCellValue();
+                } else {
+                    try {
+                        String valorVideosCarpeta = Util.getCellValue(cellVideosCarpeta);
+                        if (valorVideosCarpeta != null && !valorVideosCarpeta.isEmpty()) {
+                            cantidadVideosCarpeta = Integer.parseInt(valorVideosCarpeta);
+                        }
+                    } catch (Exception ignored) {
+                        // Si falla, queda en 0
                     }
                 }
             }
