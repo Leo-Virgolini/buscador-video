@@ -13,6 +13,7 @@ import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.openxml4j.util.ZipSecureFile;
 
 import java.util.concurrent.ExecutionException;
 import java.io.File;
@@ -143,6 +144,9 @@ public class ScrapperService extends Service<Void> {
 
             AppLogger.info("Abriendo archivo Excel...");
 
+            // Configurar límite de detección de Zip bomb para archivos con alta compresión
+            ZipSecureFile.setMinInflateRatio(0.001);
+
             try (FileInputStream fis = new FileInputStream(excelFile);
                     Workbook workbook = new XSSFWorkbook(fis)) {
 
@@ -236,9 +240,11 @@ public class ScrapperService extends Service<Void> {
                 } catch (Exception ex) {
                     AppLogger.error("Error al guardar Excel: " + ex.getMessage(), ex);
                     throw ex;
+                } finally {
+                    // Limpiar caché de estilos después de usar el workbook
+                    limpiarCacheEstilos(workbook);
                 }
             } catch (Exception e) {
-                AppLogger.error("Error al generar Excel: " + e.getMessage(), e);
                 throw e;
             }
         } else {
@@ -483,25 +489,54 @@ public class ScrapperService extends Service<Void> {
         return style;
     }
 
+    // Caché de estilos para evitar crear estilos duplicados
+    private static final Map<String, CellStyle> estiloCache = new HashMap<>();
+
     private static CellStyle obtenerEstiloConclusion(Workbook workbook, String conclusion) {
         if (conclusion == null) {
-            return crearCenteredStyle(workbook);
+            return obtenerEstiloCached(workbook, "DEFAULT", () -> crearCenteredStyle(workbook));
         }
 
         String conclusionUpper = conclusion.toUpperCase();
+        String cacheKey;
+        CellStyle style;
+
         if (conclusionUpper.equals("OK")) {
             // Verde claro para OK
-            return crearCenteredStyleWithColor(workbook, IndexedColors.LIGHT_GREEN);
+            cacheKey = "OK";
+            style = obtenerEstiloCached(workbook, cacheKey,
+                    () -> crearCenteredStyleWithColor(workbook, IndexedColors.LIGHT_GREEN));
         } else if (conclusionUpper.contains("CREAR")) {
             // Rojo claro para CREAR
-            return crearCenteredStyleWithColor(workbook, IndexedColors.ROSE);
+            cacheKey = "CREAR";
+            style = obtenerEstiloCached(workbook, cacheKey,
+                    () -> crearCenteredStyleWithColor(workbook, IndexedColors.ROSE));
         } else if (conclusionUpper.contains("SUBIR")) {
             // Amarillo claro para SUBIR
-            return crearCenteredStyleWithColor(workbook, IndexedColors.LIGHT_YELLOW);
+            cacheKey = "SUBIR";
+            style = obtenerEstiloCached(workbook, cacheKey,
+                    () -> crearCenteredStyleWithColor(workbook, IndexedColors.LIGHT_YELLOW));
         } else {
             // Estilo normal para otros casos (ERROR, etc.)
-            return crearCenteredStyle(workbook);
+            cacheKey = "DEFAULT";
+            style = obtenerEstiloCached(workbook, cacheKey, () -> crearCenteredStyle(workbook));
         }
+
+        return style;
+    }
+
+    private static CellStyle obtenerEstiloCached(Workbook workbook, String key,
+            java.util.function.Supplier<CellStyle> styleCreator) {
+        // Usar el workbook como parte de la clave para evitar conflictos entre
+        // diferentes workbooks
+        String fullKey = workbook.hashCode() + "_" + key;
+        return estiloCache.computeIfAbsent(fullKey, k -> styleCreator.get());
+    }
+
+    private static void limpiarCacheEstilos(Workbook workbook) {
+        // Limpiar estilos del workbook actual del caché
+        int workbookHash = workbook.hashCode();
+        estiloCache.entrySet().removeIf(entry -> entry.getKey().startsWith(workbookHash + "_"));
     }
 
     private static void aplicarStyleFila(Row row, CellStyle style) {
