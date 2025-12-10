@@ -16,7 +16,9 @@ import java.util.function.Supplier;
 
 public class HttpRetryHandler {
 
-    public static final Path BASE_SECRET_DIR = Paths.get(System.getenv("PROGRAMDATA"), "SuperMaster", "secrets");
+    public static final Path BASE_SECRET_DIR = Paths.get(
+            System.getenv("PROGRAMDATA") != null ? System.getenv("PROGRAMDATA") : System.getProperty("java.io.tmpdir"),
+            "SuperMaster", "secrets");
     private static final Logger logger = LogManager.getLogger(HttpRetryHandler.class);
     private static final int MAX_RETRIES = 3; // cantidad máxima de reintentos
     private static final int MAX_RETRIES_429 = 10; // más reintentos para 429 (rate limiting)

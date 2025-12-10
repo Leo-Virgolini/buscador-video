@@ -174,8 +174,14 @@ public class ScrapperService extends Service<Void> {
                 int lastRowNum = scanSheet.getLastRowNum();
                 if (lastRowNum > 0) {
                     AppLogger.info("Limpiando " + lastRowNum + " filas existentes...");
-                    // Usar shiftRows para eliminar todas las filas de una vez (más eficiente)
-                    scanSheet.shiftRows(1, lastRowNum, -lastRowNum);
+                    // Eliminar filas desde la última hasta la primera (excepto fila 0 que es el encabezado)
+                    // Usar removeRow en lugar de shiftRows para evitar problemas con muchas filas
+                    for (int i = lastRowNum; i > 0; i--) {
+                        Row row = scanSheet.getRow(i);
+                        if (row != null) {
+                            scanSheet.removeRow(row);
+                        }
+                    }
                 }
 
                 // Estilos (se reutilizarán más adelante)
