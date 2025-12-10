@@ -196,34 +196,34 @@ public class VentanaController implements Initializable {
         }
 
         ScrapperService service = new ScrapperService(excelFile, carpetaImagenes, carpetaVideos, cookies);
-        
+
         service.messageProperty().addListener((obs, old, nuevo) -> {
             if (nuevo != null && !nuevo.isBlank()) {
                 logTextArea.appendText(nuevo + "\n");
             }
         });
-        
+
         service.setOnRunning(e -> {
             buscarButton.setDisable(true);
             progressIndicator.setVisible(true);
             logTextArea.setStyle("-fx-text-fill: darkblue;");
             AppLogger.info("Iniciando proceso...");
         });
-        
+
         service.setOnSucceeded(e -> {
             logTextArea.setStyle("-fx-text-fill: darkgreen;");
             AppLogger.info("Proceso finalizado exitosamente.");
             buscarButton.setDisable(false);
             progressIndicator.setVisible(false);
         });
-        
+
         service.setOnFailed(e -> {
             logTextArea.setStyle("-fx-text-fill: firebrick;");
             AppLogger.error("Error: " + service.getException().getLocalizedMessage(), service.getException());
             buscarButton.setDisable(false);
             progressIndicator.setVisible(false);
         });
-        
+
         service.start();
     }
 

@@ -174,7 +174,8 @@ public class ScrapperService extends Service<Void> {
                 int lastRowNum = scanSheet.getLastRowNum();
                 if (lastRowNum > 0) {
                     AppLogger.info("Limpiando " + lastRowNum + " filas existentes...");
-                    // Eliminar filas desde la última hasta la primera (excepto fila 0 que es el encabezado)
+                    // Eliminar filas desde la última hasta la primera (excepto fila 0 que es el
+                    // encabezado)
                     // Usar removeRow en lugar de shiftRows para evitar problemas con muchas filas
                     for (int i = lastRowNum; i > 0; i--) {
                         Row row = scanSheet.getRow(i);
@@ -621,6 +622,14 @@ public class ScrapperService extends Service<Void> {
             int totalFilas = scanSheet.getLastRowNum() + 1;
             AppLogger.info("Procesando " + totalFilas + " productos en carpetas...");
 
+            // Indexar archivos una sola vez para optimizar búsquedas (especialmente útil
+            // con Google Drive)
+            AppLogger.info("Indexando archivos de imágenes...");
+            Map<String, Integer> cacheImagenes = indexarArchivosPorSku(carpetaImagenes, IMAGE_EXTENSIONS_SET);
+            AppLogger.info("Indexando archivos de videos...");
+            Map<String, Integer> cacheVideos = indexarVideosPorSku(carpetaVideos);
+            AppLogger.info("Búsqueda indexada completada. Procesando productos...");
+
             for (int rowNum = 1; rowNum < totalFilas; rowNum++) {
                 Row row = scanSheet.getRow(rowNum);
                 if (row == null)
@@ -645,17 +654,11 @@ public class ScrapperService extends Service<Void> {
                     continue;
                 }
 
-                // Buscar imágenes
-                int cantidadImagenes = 0;
-                if (!carpetaImagenes.isEmpty()) {
-                    cantidadImagenes = contarArchivosPorSku(carpetaImagenes, skuNormalizado, IMAGE_EXTENSIONS_SET);
-                }
+                // Buscar imágenes usando caché (mucho más rápido)
+                int cantidadImagenes = cacheImagenes.getOrDefault(skuNormalizado, 0);
 
-                // Buscar videos (en carpetas nombradas con el SKU)
-                int cantidadVideos = 0;
-                if (!carpetaVideos.isEmpty()) {
-                    cantidadVideos = contarVideosPorSku(carpetaVideos, skuNormalizado);
-                }
+                // Buscar videos usando caché (mucho más rápido)
+                int cantidadVideos = cacheVideos.getOrDefault(skuNormalizado, 0);
 
                 // Actualizar celdas de archivos en carpetas
                 Cell cellImagenes = row.getCell(colImagenesCarpeta);
@@ -756,13 +759,24 @@ public class ScrapperService extends Service<Void> {
 
             // Verificar imágenes
             if (cantidadImagenesML < 6) {
-                int imagenesFaltantes = 6 - cantidadImagenesML;
+                int imagenesFaltantes = 6 - cantidadImagenesML; // Cuántas faltan para llegar a 6 en ML
+
                 if (cantidadImagenesCarpeta < 6) {
-                    return "CREAR " + imagenesFaltantes + " " + (imagenesFaltantes == 1 ? "imagen" : "imágenes");
+                    if (cantidadImagenesCarpeta > cantidadImagenesML) {
+                        // Hay más imágenes en carpeta que en ML (pueden que no estén subidas)
+                        // Las imágenes a crear son: 6 - cantidadImagenesCarpeta
+                        int imagenesACrear = 6 - cantidadImagenesCarpeta;
+                        return "CREAR " + imagenesACrear + " "
+                                + (imagenesACrear == 1 ? "imagen" : "imágenes") + " y SUBIR " + imagenesFaltantes;
+                    } else {
+                        // No hay más imágenes en carpeta que en ML, solo crear las faltantes
+                        return "CREAR " + imagenesFaltantes + " " + (imagenesFaltantes == 1 ? "imagen" : "imágenes");
+                    }
                 } else if (cantidadImagenesCarpeta == 6) {
+                    // Ya hay 6 en carpeta, solo subir las faltantes
                     return "SUBIR " + imagenesFaltantes + " " + (imagenesFaltantes == 1 ? "imagen" : "imágenes");
                 } else {
-                    // Solo mostrar "se pueden subir hasta" si hay más de 6 imágenes en carpeta
+                    // Hay más de 6 imágenes en carpeta
                     return "SUBIR " + imagenesFaltantes + " " + (imagenesFaltantes == 1 ? "imagen" : "imágenes")
                             + "  (se pueden subir hasta " + (cantidadImagenesCarpeta - cantidadImagenesML) + " más)";
                 }
@@ -912,6 +926,117 @@ public class ScrapperService extends Service<Void> {
             AppLogger.warn("Error de I/O al buscar videos en carpeta " + carpetaVideos + ": " + e.getMessage());
             return 0;
         }
+    }
+
+    /**
+     * Indexa todos los archivos por SKU en un Map para búsquedas rápidas.
+     * Recorre la carpeta una sola vez en lugar de hacerlo por cada SKU.
+     */
+    private static Map<String, Integer> indexarArchivosPorSku(String carpeta, Set<String> extensionesSet) {
+        Map<String, Integer> index = new HashMap<>();
+
+        if (carpeta == null || carpeta.isEmpty()) {
+            return index;
+        }
+
+        try {
+            Path carpetaPath = Paths.get(carpeta).normalize();
+
+            if (!Files.exists(carpetaPath) || !Files.isDirectory(carpetaPath) || !Files.isReadable(carpetaPath)) {
+                AppLogger.warn("No se puede acceder a la carpeta de imágenes para indexar: " + carpetaPath);
+                return index;
+            }
+
+            try (Stream<Path> paths = Files.walk(carpetaPath)) {
+                paths.filter(Files::isRegularFile)
+                        .forEach(path -> {
+                            try {
+                                String nombreArchivoCompleto = path.getFileName().toString().toUpperCase();
+
+                                int lastDot = nombreArchivoCompleto.lastIndexOf('.');
+                                if (lastDot == -1 || lastDot == nombreArchivoCompleto.length() - 1) {
+                                    return;
+                                }
+
+                                String extension = nombreArchivoCompleto.substring(lastDot).toLowerCase();
+                                if (!extensionesSet.contains(extension)) {
+                                    return;
+                                }
+
+                                String nombreSinExtension = nombreArchivoCompleto.substring(0, lastDot);
+                                if (nombreSinExtension.length() < 7) {
+                                    return;
+                                }
+
+                                String skuKey = nombreSinExtension.substring(0, 7);
+                                index.put(skuKey, index.getOrDefault(skuKey, 0) + 1);
+                            } catch (Exception e) {
+                                // Ignorar errores en archivos individuales
+                            }
+                        });
+            }
+        } catch (Exception e) {
+            AppLogger.warn("Error al indexar archivos de imágenes: " + e.getMessage());
+        }
+
+        return index;
+    }
+
+    /**
+     * Indexa todos los videos por SKU en un Map para búsquedas rápidas.
+     * Recorre la carpeta una sola vez en lugar de hacerlo por cada SKU.
+     */
+    private static Map<String, Integer> indexarVideosPorSku(String carpetaVideos) {
+        Map<String, Integer> index = new HashMap<>();
+
+        if (carpetaVideos == null || carpetaVideos.isEmpty()) {
+            return index;
+        }
+
+        try {
+            Path carpetaPath = Paths.get(carpetaVideos).normalize();
+
+            if (!Files.exists(carpetaPath) || !Files.isDirectory(carpetaPath) || !Files.isReadable(carpetaPath)) {
+                AppLogger.warn("No se puede acceder a la carpeta de videos para indexar: " + carpetaPath);
+                return index;
+            }
+
+            try (Stream<Path> carpetas = Files.list(carpetaPath)) {
+                carpetas.filter(Files::isDirectory)
+                        .forEach(carpeta -> {
+                            try {
+                                String nombreCarpeta = carpeta.getFileName().toString().toUpperCase();
+                                if (nombreCarpeta.length() < 7) {
+                                    return;
+                                }
+
+                                String skuKey = nombreCarpeta.substring(0, 7);
+
+                                try (Stream<Path> archivos = Files.list(carpeta)) {
+                                    long count = archivos
+                                            .filter(Files::isRegularFile)
+                                            .filter(archivo -> {
+                                                String nombreArchivo = archivo.getFileName().toString().toUpperCase();
+                                                String extension = nombreArchivo
+                                                        .substring(Math.max(0, nombreArchivo.lastIndexOf('.')));
+                                                return VIDEO_EXTENSIONS_SET.contains(extension.toLowerCase());
+                                            })
+                                            .count();
+
+                                    if (count > 0) {
+                                        index.put(skuKey, index.getOrDefault(skuKey, 0) + (int) count);
+                                    }
+                                }
+                            } catch (Exception e) {
+                                // Ignorar errores en carpetas individuales
+                            }
+                        });
+            }
+        } catch (Exception e) {
+            AppLogger.warn("Error al indexar videos: " + e.getMessage());
+        }
+
+        return index;
     }
 
     private static int contarArchivosPorSku(String carpeta, String sku, Set<String> extensionesSet) {
