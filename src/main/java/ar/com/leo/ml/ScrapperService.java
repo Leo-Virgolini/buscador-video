@@ -3,46 +3,38 @@ package ar.com.leo.ml;
 import ar.com.leo.AppLogger;
 import ar.com.leo.Util;
 import ar.com.leo.ml.model.Producto;
+import ar.com.leo.ml.model.ProductoData;
 import javafx.concurrent.Service;
-import java.util.concurrent.Future;
-import java.util.concurrent.Callable;
-import java.util.List;
+import javafx.concurrent.Task;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
+import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.ss.usermodel.IndexedColors;
-import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.apache.poi.openxml4j.util.ZipSecureFile;
 
-import java.util.concurrent.ExecutionException;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import com.google.common.util.concurrent.RateLimiter;
+
+import java.io.*;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.AccessDeniedException;
-import java.nio.file.FileSystemException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import javafx.concurrent.Task;
 
 public class ScrapperService extends Service<Void> {
 
     public static final int POOL_SIZE = 10;
     private static final ExecutorService executor = Executors.newFixedThreadPool(POOL_SIZE);
+    private static final ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
 
     private static final int TIMEOUT_SECONDS = 15;
     private static final String BUSQUEDA = "alt=\"clip-icon\"";
@@ -58,12 +50,18 @@ public class ScrapperService extends Service<Void> {
     private final File carpetaImagenes;
     private final File carpetaVideos;
     private final String cookieHeader;
+    private final double requestsPorSegundo;
+    private RateLimiter videoRateLimiter; // Rate limiter dinámico
 
-    public ScrapperService(File excelFile, File carpetaImagenes, File carpetaVideos, String cookieHeader) {
+    public ScrapperService(File excelFile, File carpetaImagenes, File carpetaVideos, String cookieHeader,
+            double requestsPorSegundo) {
         this.excelFile = excelFile;
         this.carpetaImagenes = carpetaImagenes;
         this.carpetaVideos = carpetaVideos;
         this.cookieHeader = cookieHeader;
+        this.requestsPorSegundo = requestsPorSegundo;
+        // Crear rate limiter con el valor especificado
+        this.videoRateLimiter = RateLimiter.create(requestsPorSegundo);
     }
 
     @Override
@@ -101,7 +99,9 @@ public class ScrapperService extends Service<Void> {
         }
     }
 
-    public void run() throws Exception, IOException, InterruptedException {
+    public void run() throws Exception {
+        String fechaHoraInicio = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
+        AppLogger.info("[" + fechaHoraInicio + "] Iniciando proceso...");
 
         // Verificar que el archivo no esté en uso
         try (RandomAccessFile raf = new RandomAccessFile(excelFile, "rw")) {
@@ -121,13 +121,15 @@ public class ScrapperService extends Service<Void> {
         if (cookiesValidas(cookieHeader)) {
             AppLogger.info("Cookies válidas.");
 
-            final List<Producto> productoList = obtenerDatos();
+            final List<ProductoData> productoList = obtenerDatos();
 
             AppLogger.info("Verificando videos en " + productoList.size() + " productos...");
             List<Callable<Void>> tasks = new ArrayList<>();
-            for (Producto producto : productoList) {
+            for (ProductoData productoData : productoList) {
                 tasks.add(() -> {
-                    producto.videoId = verificarVideo(producto.permalink, cookieHeader);
+                    String videoResult = this.verificarVideo(productoData.permalink, cookieHeader);
+                    // verificarVideo retorna "SI", "NO", "NO EXISTE", "ERROR: ...", etc.
+                    productoData.tieneVideo = "SI".equals(videoResult) ? "SI" : "NO";
                     return null;
                 });
             }
@@ -136,12 +138,11 @@ public class ScrapperService extends Service<Void> {
 
             // Ordenamiento
             productoList.sort(Comparator
-                    .comparing((Producto p) -> p.status, Comparator.nullsFirst(String::compareTo))
-                    .thenComparing(p -> p.id, Comparator.nullsFirst(String::compareTo))
-                    .thenComparing(p -> p.pictures == null ? 0 : p.pictures.size())
-                    .thenComparing(p -> p.videoId != null ? p.videoId.toString() : "NO",
-                            Comparator.nullsFirst(String::compareTo))
-                    .thenComparing(p -> getSku(p.attributes), Comparator.nullsFirst(String::compareTo)));
+                    .comparing((ProductoData p) -> p.status, Comparator.nullsFirst(String::compareTo))
+                    .thenComparing(p -> p.mla, Comparator.nullsFirst(String::compareTo))
+                    .thenComparing(p -> p.cantidadImagenes)
+                    .thenComparing(p -> p.tieneVideo, Comparator.nullsFirst(String::compareTo))
+                    .thenComparing(p -> p.sku, Comparator.nullsFirst(String::compareTo)));
 
             // Excel
             final Path excelPath = excelFile.toPath();
@@ -211,21 +212,24 @@ public class ScrapperService extends Service<Void> {
                 aplicarStyleFila(header, headerStyle);
 
                 // ==========================
-                // Cargar productos
+                // Cargar productos y variaciones
                 // ==========================
                 int rowNum = 1;
-                for (Producto p : productoList) {
+                for (ProductoData p : productoList) {
                     Row row = scanSheet.createRow(rowNum++);
-                    int cantidadImagenes = p.pictures != null ? p.pictures.size() : 0;
-                    String tieneVideo = p.videoId != null ? p.videoId.toString() : "NO";
+
+                    // Formatear MLA: si es variación, mostrar el MLAU
+                    String mlaDisplay = p.esVariacion
+                            ? (p.mla + " (VAR: " + p.userProductId + ")")
+                            : p.mla;
 
                     row.createCell(0).setCellValue(p.status);
-                    row.createCell(1).setCellValue(p.id);
-                    row.createCell(2).setCellValue(cantidadImagenes);
-                    row.createCell(3).setCellValue(tieneVideo);
-                    row.createCell(4).setCellValue(getSku(p.attributes)); // SKU
+                    row.createCell(1).setCellValue(mlaDisplay);
+                    row.createCell(2).setCellValue(p.cantidadImagenes);
+                    row.createCell(3).setCellValue(p.tieneVideo);
+                    row.createCell(4).setCellValue(p.sku);
                     row.createCell(5).setCellValue(p.permalink);
-                    row.createCell(6).setCellValue(p.catalogListing ? "CATALOGO" : "TRADICIONAL");
+                    row.createCell(6).setCellValue(p.tipoPublicacion);
 
                     aplicarStyleFila(row, centeredStyle);
                 }
@@ -251,6 +255,8 @@ public class ScrapperService extends Service<Void> {
                     // Limpiar caché de estilos después de usar el workbook
                     limpiarCacheEstilos(workbook);
                 }
+                String fechaHoraFin = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
+                AppLogger.info("[" + fechaHoraFin + "] Proceso finalizado exitosamente.");
             } catch (Exception e) {
                 throw e;
             }
@@ -260,11 +266,11 @@ public class ScrapperService extends Service<Void> {
         }
     }
 
-    private static String verificarVideo(String url, String cookieHeader) {
+    private String verificarVideo(String url, String cookieHeader) {
         return verificarVideo(url, cookieHeader, 0);
     }
 
-    private static String verificarVideo(String url, String cookieHeader, int intentos) {
+    private String verificarVideo(String url, String cookieHeader, int intentos) {
         // Límite de recursión para evitar StackOverflowError
         if (intentos >= 5) {
             AppLogger.warn("Límite de reintentos alcanzado para: " + url);
@@ -273,6 +279,9 @@ public class ScrapperService extends Service<Void> {
 
         int status = 0;
         try {
+            // Aplicar rate limiting para evitar bloqueos
+            videoRateLimiter.acquire();
+
             final HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
@@ -339,7 +348,7 @@ public class ScrapperService extends Service<Void> {
         return "ERROR: " + status;
     }
 
-    public static List<Producto> obtenerDatos() throws Exception, InterruptedException, IOException {
+    public static List<ProductoData> obtenerDatos() throws Exception, InterruptedException, IOException {
 
         MercadoLibreAPI.inicializar();
 
@@ -350,7 +359,7 @@ public class ScrapperService extends Service<Void> {
         final List<String> productos = MercadoLibreAPI.obtenerTodosLosItemsId(userId);
         AppLogger.info("Total de Productos encontrados: " + productos.size());
 
-        final List<Producto> productoList = Collections.synchronizedList(new ArrayList<>());
+        final List<ProductoData> productoList = Collections.synchronizedList(new ArrayList<>());
 
         AppLogger.info("Obteniendo datos de todos los productos...");
         List<Callable<Void>> tasks = new ArrayList<>();
@@ -358,14 +367,77 @@ public class ScrapperService extends Service<Void> {
             tasks.add(() -> {
                 Producto producto = MercadoLibreAPI.getItemByMLA(mla);
                 if (producto != null) {
-                    productoList.add(producto);
+                    // Verificar si tiene variaciones (ya vienen en producto.variations)
+                    if (producto.variations != null && !producto.variations.isEmpty()) {
+                        AppLogger.info(
+                                "ML - Item " + producto.id + " tiene " + producto.variations.size() + " variaciones");
+
+                        // Recorrer cada variación
+                        for (Object variationObj : producto.variations) {
+                            // Convertir Object a JsonNode para acceder a los campos
+                            JsonNode variation = mapper.valueToTree(variationObj);
+
+                            // Obtener user_product_id de la variación
+                            JsonNode userProductIdNode = variation.path("user_product_id");
+                            String userProductId = userProductIdNode.isNull() ? null : userProductIdNode.asString("");
+
+                            if (userProductId != null && !userProductId.isEmpty()) {
+                                // Obtener datos de la variación usando getItemNodeByMLAU
+                                JsonNode variacionNode = MercadoLibreAPI.getItemNodeByMLAU(userProductId);
+                                if (variacionNode != null) {
+                                    // Buscar el atributo SELLER_SKU en attributes
+                                    String sku = extraerSkuDeVariacion(variacionNode);
+                                    if (sku != null && !sku.isEmpty()) {
+                                        AppLogger.info("ML - Variación " + userProductId + " - SKU: " + sku);
+                                        // Agregar la variación como ProductoData
+                                        productoList.add(new ProductoData(producto, userProductId, sku));
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Agregar el producto principal (sin variaciones)
+                        String sku = getSku(producto.attributes);
+                        productoList.add(new ProductoData(producto, sku));
+                    }
                 }
                 return null;
             });
         }
         ejecutarBloque(tasks);
 
+        AppLogger.info("Total de productos y variaciones: " + productoList.size());
         return productoList;
+    }
+
+    /**
+     * Extrae el SKU de los primeros 7 dígitos del atributo name en SELLER_SKU
+     */
+    private static String extraerSkuDeVariacion(JsonNode variacionNode) {
+        try {
+            JsonNode attributes = variacionNode.path("attributes");
+            if (attributes.isArray()) {
+                for (JsonNode attribute : attributes) {
+                    JsonNode idNode = attribute.path("id");
+                    String id = idNode.isNull() ? "" : idNode.asString();
+                    if ("SELLER_SKU".equals(id)) {
+                        JsonNode nameNode = attribute.path("name");
+                        String name = nameNode.isNull() ? "" : nameNode.asString();
+                        if (name != null && name.length() >= 7) {
+                            // Obtener los primeros 7 dígitos
+                            String primeros7Digitos = name.substring(0, 7);
+                            // Verificar que sean dígitos
+                            if (primeros7Digitos.matches("\\d{7}")) {
+                                return primeros7Digitos;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            AppLogger.warn("Error al extraer SKU de variación: " + e.getMessage());
+        }
+        return null;
     }
 
     public static boolean cookiesValidas(String cookieHeader) {
@@ -764,10 +836,8 @@ public class ScrapperService extends Service<Void> {
                 if (cantidadImagenesCarpeta < 6) {
                     if (cantidadImagenesCarpeta > cantidadImagenesML) {
                         // Hay más imágenes en carpeta que en ML (pueden que no estén subidas)
-                        // Las imágenes a crear son: 6 - cantidadImagenesCarpeta
                         int imagenesACrear = 6 - cantidadImagenesCarpeta;
-                        return "CREAR " + imagenesACrear + " "
-                                + (imagenesACrear == 1 ? "imagen" : "imágenes") + " y SUBIR " + imagenesFaltantes;
+                        return "CREAR " + imagenesACrear + " " + (imagenesACrear == 1 ? "imagen" : "imágenes");
                     } else {
                         // No hay más imágenes en carpeta que en ML, solo crear las faltantes
                         return "CREAR " + imagenesFaltantes + " " + (imagenesFaltantes == 1 ? "imagen" : "imágenes");

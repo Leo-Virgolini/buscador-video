@@ -118,8 +118,29 @@
          </children>
       </Pane>
 
+      <!-- Panel de Configuración -->
+      <Pane layoutX="17.0" layoutY="340.0" prefHeight="60.0" prefWidth="366.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;" AnchorPane.leftAnchor="10.0" AnchorPane.rightAnchor="10.0">
+         <children>
+            <Label layoutX="10.0" layoutY="4.0" prefHeight="20.0" prefWidth="200.0" text="Requests por segundo:" textFill="WHITE">
+               <font>
+                  <Font name="Arial Bold" size="13.0" />
+               </font>
+            </Label>
+            <TextField fx:id="requestsPorSegundo" alignment="CENTER" editable="true" focusTraversable="true" layoutX="10.0" layoutY="25.0" prefHeight="27.0" prefWidth="40.0" promptText="5" style="-fx-background-color: #242831; -fx-text-fill: white;">
+               <font>
+                  <Font name="Roboto" size="13.0" />
+               </font>
+            </TextField>
+            <Label layoutX="53.0" layoutY="29.0" prefHeight="20.0" prefWidth="306.0" text="(Velocidad de verificación de videos. Valor recomendado: 3-5)" textFill="#888888">
+               <font>
+                  <Font name="Roboto" size="11.0" />
+               </font>
+            </Label>
+         </children>
+      </Pane>
+
       <!-- Botón de ejecución -->
-      <Button fx:id="buscarButton" alignment="CENTER" layoutX="274.0" layoutY="354.0" mnemonicParsing="false" onAction="#buscarImagenesYVideos" prefHeight="50.0" prefWidth="352.0" style="-fx-background-color: #514398; -fx-background-radius: 5;" text="Buscar Videos e Imágenes" textAlignment="CENTER" textFill="WHITE" wrapText="true">
+      <Button fx:id="buscarButton" alignment="CENTER" layoutX="274.0" layoutY="424.0" mnemonicParsing="false" onAction="#buscarImagenesYVideos" prefHeight="50.0" prefWidth="352.0" style="-fx-background-color: #514398; -fx-background-radius: 5;" text="Buscar Videos e Imágenes" textAlignment="CENTER" textFill="WHITE" wrapText="true">
          <font>
             <Font name="Consolas Bold" size="20.0" />
          </font>
@@ -136,15 +157,15 @@
       </Button>
 
       <!-- Progress Indicator -->
-      <ProgressIndicator fx:id="progressIndicator" layoutX="637.0" layoutY="359.0" prefHeight="40.0" prefWidth="40.0" visible="false" />
+      <ProgressIndicator fx:id="progressIndicator" layoutX="637.0" layoutY="429.0" prefHeight="40.0" prefWidth="40.0" visible="false" />
 
       <!-- Área de Logs -->
-      <Label layoutX="10.0" layoutY="404.0" prefHeight="16.0" prefWidth="62.0" text="Logs:" textFill="WHITE">
+      <Label layoutX="10.0" layoutY="474.0" prefHeight="16.0" prefWidth="62.0" text="Logs:" textFill="WHITE">
          <font>
             <Font name="Arial Bold" size="13.0" />
          </font>
       </Label>
-      <TextArea fx:id="logTextArea" editable="false" layoutX="11.2" layoutY="421.0" prefHeight="268.0" prefWidth="879.0" style="-fx-background-radius: 5;" AnchorPane.bottomAnchor="10.0" AnchorPane.leftAnchor="11.0" AnchorPane.rightAnchor="10.0">
+      <TextArea fx:id="logTextArea" editable="false" layoutX="11.2" layoutY="491.0" prefHeight="198.0" prefWidth="879.0" style="-fx-background-radius: 5;" AnchorPane.bottomAnchor="10.0" AnchorPane.leftAnchor="11.0" AnchorPane.rightAnchor="10.0">
          <font>
             <Font name="Roboto" size="12.0" />
          </font>

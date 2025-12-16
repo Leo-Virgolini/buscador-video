@@ -11,6 +11,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.ZonedDateTime;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
@@ -151,7 +152,7 @@ public class HttpRetryHandler {
             } catch (NumberFormatException e) {
                 try {
                     // si es fecha → calcular diferencia
-                    long epoch = java.time.ZonedDateTime
+                    long epoch = ZonedDateTime
                             .parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant()
                             .toEpochMilli();
 

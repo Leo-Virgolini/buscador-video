@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>ar.com.leo</groupId>
-    <artifactId>buscador-video</artifactId>
+    <artifactId>buscador-imagenes-videos-mercadolibre</artifactId>
     <version>1.0</version>
 
     <properties>

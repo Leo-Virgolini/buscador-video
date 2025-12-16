@@ -8,6 +8,8 @@ import javafx.stage.DirectoryChooser;
 
 import java.io.File;
 import java.net.URL;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ResourceBundle;
 import java.util.prefs.Preferences;
 
@@ -22,6 +24,8 @@ public class VentanaController implements Initializable {
     private TextField ubicacionCarpetaImagenes;
     @FXML
     private TextField ubicacionCarpetaVideos;
+    @FXML
+    private TextField requestsPorSegundo;
 
     @FXML
     private TextArea logTextArea;
@@ -74,6 +78,9 @@ public class VentanaController implements Initializable {
         if (!cookies.isBlank()) {
             cookiesTextArea.setText(cookies);
         }
+
+        String requestsPorSeg = prefs.get("requestsPorSegundo", "5");
+        requestsPorSegundo.setText(requestsPorSeg);
     }
 
     private void savePreferences() {
@@ -83,6 +90,7 @@ public class VentanaController implements Initializable {
         prefs.put("ubicacionCarpetaImagenes", ubicacionCarpetaImagenes.getText());
         prefs.put("ubicacionCarpetaVideos", ubicacionCarpetaVideos.getText());
         prefs.put("cookies", cookiesTextArea.getText());
+        prefs.put("requestsPorSegundo", requestsPorSegundo.getText());
     }
 
     @FXML
@@ -195,7 +203,26 @@ public class VentanaController implements Initializable {
             return;
         }
 
-        ScrapperService service = new ScrapperService(excelFile, carpetaImagenes, carpetaVideos, cookies);
+        // Validar y obtener requests por segundo
+        double requestsPorSeg = 5.0; // Valor por defecto
+        try {
+            String requestsText = requestsPorSegundo.getText().trim();
+            if (!requestsText.isBlank()) {
+                requestsPorSeg = Double.parseDouble(requestsText);
+                if (requestsPorSeg <= 0 || requestsPorSeg > 20) {
+                    logTextArea.appendText(
+                            "⚠️ Advertencia: Requests por segundo debe estar entre 0.1 y 20. Usando valor por defecto: 5\n");
+                    requestsPorSeg = 5.0;
+                }
+            }
+        } catch (NumberFormatException e) {
+            logTextArea.appendText(
+                    "⚠️ Advertencia: Valor inválido en 'Requests por segundo'. Usando valor por defecto: 5\n");
+            requestsPorSeg = 5.0;
+        }
+
+        ScrapperService service = new ScrapperService(excelFile, carpetaImagenes, carpetaVideos, cookies,
+                requestsPorSeg);
 
         service.messageProperty().addListener((obs, old, nuevo) -> {
             if (nuevo != null && !nuevo.isBlank()) {
@@ -207,12 +234,14 @@ public class VentanaController implements Initializable {
             buscarButton.setDisable(true);
             progressIndicator.setVisible(true);
             logTextArea.setStyle("-fx-text-fill: darkblue;");
-            AppLogger.info("Iniciando proceso...");
+            String fechaHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
+            AppLogger.info("[" + fechaHora + "] Iniciando proceso...");
         });
 
         service.setOnSucceeded(e -> {
             logTextArea.setStyle("-fx-text-fill: darkgreen;");
-            AppLogger.info("Proceso finalizado exitosamente.");
+            String fechaHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
+            AppLogger.info("[" + fechaHora + "] Proceso finalizado exitosamente.");
             buscarButton.setDisable(false);
             progressIndicator.setVisible(false);
         });

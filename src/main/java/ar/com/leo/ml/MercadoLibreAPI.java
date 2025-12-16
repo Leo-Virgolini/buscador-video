@@ -33,9 +33,27 @@ public class MercadoLibreAPI {
     private static final Object TOKEN_LOCK = new Object();
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final HttpClient httpClient = HttpClient.newHttpClient();
-    private static final HttpRetryHandler retryHandler = new HttpRetryHandler(httpClient, 30000L, 5); // 5 requests por segundo
+    private static final HttpRetryHandler retryHandler = new HttpRetryHandler(httpClient, 30000L, 5); // 5 requests por
+                                                                                                      // segundo
     private static MLCredentials mlCredentials;
     private static TokensML tokens;
+
+    public static void main(String[] args) throws IOException {
+        MercadoLibreAPI.inicializar();
+        // String userId = MercadoLibreAPI.getUserId();
+
+        JsonNode itemNode = MercadoLibreAPI.getItemNodeByMLA("MLA1435717113");
+        System.out.println(itemNode.toPrettyString());
+
+        // JsonNode variations = MercadoLibreAPI.obtenerVariaciones("MLA1435717113");
+        // System.out.println(variations.toPrettyString());
+
+        // JsonNode itemNodeU = MercadoLibreAPI.getItemNodeByMLAU("MLAU398170646");
+        // System.out.println(itemNodeU.toPrettyString());
+
+        // JsonNode performance = MercadoLibreAPI.getItemPerformance("MLA1100122612");
+        // System.out.println(performance.toPrettyString());
+    }
 
     public static String getUserId() throws IOException {
         MercadoLibreAPI.verificarTokens();
@@ -71,6 +89,28 @@ public class MercadoLibreAPI {
         JsonNode datos = mapper.readTree(response.body());
 
         return datos;
+    }
+
+    public static JsonNode obtenerVariaciones(String itemId) {
+
+        MercadoLibreAPI.verificarTokens();
+
+        final String url = "https://api.mercadolibre.com/items/" + itemId + "/variations";
+
+        final Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response.statusCode() != 200) {
+            logger.warn("Error al obtener las variaciones item: " + itemId + ": " + response.body());
+            return null;
+        }
+
+        return mapper.readTree(response.body());
     }
 
     public static List<String> obtenerTodosLosItemsId(String userId) throws InterruptedException {
@@ -122,7 +162,7 @@ public class MercadoLibreAPI {
             }
 
             // Pausa corta para evitar rate limit
-            Thread.sleep(200);
+            // Thread.sleep(200);
 
         } while (continuar);
 
@@ -143,7 +183,8 @@ public class MercadoLibreAPI {
 
         if (response.statusCode() != 200) {
             logger.warn("ML - No se pudo obtener item: " + itemId + ": " + response.body());
-//            throw new IOException("Error al obtener el producto: " + itemId  + response.body());
+            // throw new IOException("Error al obtener el producto: " + itemId +
+            // response.body());
         }
 
         // Convertir JSON → objeto MeliItem
@@ -167,11 +208,57 @@ public class MercadoLibreAPI {
             return null;
         }
 
-        // Convertir JSON → objeto MeliItem
         return mapper.readTree(response.body());
     }
 
-    // TOKENS -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    public static JsonNode getItemNodeByMLAU(String mlau) {
+
+        final String url = "https://api.mercadolibre.com/user-products/" + mlau;
+
+        final Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response.statusCode() != 200) {
+            logger.warn("ML - Error al obtener el producto: " + response.body());
+            return null;
+        }
+
+        return mapper.readTree(response.body());
+    }
+
+    /**
+     * Obtiene la calidad/performance de una publicación de MercadoLibre.
+     * 
+     * @param itemId ID del item (MLA) de MercadoLibre
+     * @return JsonNode con los datos de performance, o null si hay error
+     */
+    public static JsonNode getItemPerformance(String itemId) {
+        MercadoLibreAPI.verificarTokens();
+        final String url = "https://api.mercadolibre.com/item/" + itemId + "/performance";
+
+        final Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response.statusCode() != 200) {
+            logger.warn("ML - Error al obtener performance del item " + itemId + ": " + response.body());
+            return null;
+        }
+
+        return mapper.readTree(response.body());
+    }
+
+    // TOKENS
+    // -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     // --- MÉTODO PRINCIPAL ---
     public static boolean inicializar() {
         mlCredentials = cargarMLCredentials();
@@ -273,8 +360,7 @@ public class MercadoLibreAPI {
                                 "&client_id=" + mlCredentials.clientId +
                                 "&client_secret=" + mlCredentials.clientSecret +
                                 "&code=" + code +
-                                "&redirect_uri=" + mlCredentials.redirectUri
-                ))
+                                "&redirect_uri=" + mlCredentials.redirectUri))
                 .build();
 
         HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
@@ -295,8 +381,7 @@ public class MercadoLibreAPI {
                         "grant_type=refresh_token" +
                                 "&client_id=" + mlCredentials.clientId +
                                 "&client_secret=" + mlCredentials.clientSecret +
-                                "&refresh_token=" + refreshToken
-                ))
+                                "&refresh_token=" + refreshToken))
                 .build();
 
         HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
