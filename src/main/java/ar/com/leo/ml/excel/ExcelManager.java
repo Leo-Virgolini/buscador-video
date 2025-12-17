@@ -52,18 +52,21 @@ public class ExcelManager {
         // Configurar límite de detección de Zip bomb para archivos con alta compresión
         ZipSecureFile.setMinInflateRatio(0.001);
 
-        FileInputStream fis = new FileInputStream(excelFile);
-        Workbook workbook = new XSSFWorkbook(fis);
+        // Usar try-with-resources para asegurar que el FileInputStream se cierre
+        // incluso si falla la construcción del Workbook
+        try (FileInputStream fis = new FileInputStream(excelFile)) {
+            Workbook workbook = new XSSFWorkbook(fis);
 
-        // Verificar que tenga al menos 2 hojas
-        if (workbook.getNumberOfSheets() < 2) {
-            workbook.close();
-            fis.close();
-            throw new IllegalArgumentException("El archivo Excel debe tener al menos 2 hojas. " +
-                    "Hojas encontradas: " + workbook.getNumberOfSheets());
+            // Verificar que tenga al menos 2 hojas
+            if (workbook.getNumberOfSheets() < 2) {
+                workbook.close();
+                throw new IllegalArgumentException("El archivo Excel debe tener al menos 2 hojas. " +
+                        "Hojas encontradas: " + workbook.getNumberOfSheets());
+            }
+
+            // El workbook ahora tiene el contenido en memoria, el stream se cerrará automáticamente
+            return workbook;
         }
-
-        return workbook;
     }
 
     /**

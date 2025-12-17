@@ -1,7 +1,7 @@
 package fx;
 
 import ar.com.leo.AppLogger;
-import ar.com.leo.ml.ScrapperService;
+import ar.com.leo.ml.ProductReportService;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -37,7 +37,7 @@ public class Main extends Application {
     @Override
     public void stop() {
         AppLogger.info("Cerrando aplicación...");
-        ScrapperService.shutdownExecutors();
+        ProductReportService.shutdownExecutors();
         AppLogger.shutdown();
     }
 

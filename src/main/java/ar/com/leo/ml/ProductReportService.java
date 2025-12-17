@@ -29,7 +29,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.stream.Stream;
 
-public class ScrapperService extends Service<Void> {
+public class ProductReportService extends Service<Void> {
 
     public static final int POOL_SIZE = 10;
     private static final ExecutorService executor = Executors.newFixedThreadPool(POOL_SIZE);
@@ -39,7 +39,7 @@ public class ScrapperService extends Service<Void> {
     private final File carpetaImagenes;
     private final File carpetaVideos;
 
-    public ScrapperService(File excelFile, File carpetaImagenes, File carpetaVideos) {
+    public ProductReportService(File excelFile, File carpetaImagenes, File carpetaVideos) {
         this.excelFile = excelFile;
         this.carpetaImagenes = carpetaImagenes;
         this.carpetaVideos = carpetaVideos;
@@ -51,7 +51,7 @@ public class ScrapperService extends Service<Void> {
             @Override
             protected Void call() throws Exception {
                 AppLogger.setUiLogger(message -> updateMessage(message));
-                ScrapperService.this.run();
+                ProductReportService.this.run();
                 return null;
             }
         };

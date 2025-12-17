@@ -14,7 +14,7 @@ import java.util.ResourceBundle;
 import java.util.prefs.Preferences;
 
 import ar.com.leo.AppLogger;
-import ar.com.leo.ml.ScrapperService;
+import ar.com.leo.ml.ProductReportService;
 
 public class VentanaController implements Initializable {
 
@@ -173,7 +173,7 @@ public class VentanaController implements Initializable {
             return;
         }
 
-        ScrapperService service = new ScrapperService(excelFile, carpetaImagenes, carpetaVideos);
+        ProductReportService service = new ProductReportService(excelFile, carpetaImagenes, carpetaVideos);
 
         service.messageProperty().addListener((obs, old, nuevo) -> {
             if (nuevo != null && !nuevo.isBlank()) {
