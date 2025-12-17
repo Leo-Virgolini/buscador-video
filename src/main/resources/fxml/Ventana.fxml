@@ -12,38 +12,74 @@
 <?import javafx.scene.layout.Pane?>
 <?import javafx.scene.text.Font?>
 
-<AnchorPane minHeight="600.0" minWidth="800.0" prefHeight="700.0" prefWidth="900.0" style="-fx-background-color: #242831;" xmlns="http://javafx.com/javafx/24.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="fx.VentanaController">
+<AnchorPane minHeight="435.0" minWidth="800.0" prefHeight="552.0" prefWidth="900.0" style="-fx-background-color: #242831;" xmlns="http://javafx.com/javafx/24.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="fx.VentanaController">
    <children>
-      <!-- Panel de Cookies -->
-      <Pane layoutX="17.0" layoutY="10.0" prefHeight="120.0" prefWidth="865.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;" AnchorPane.leftAnchor="10.0" AnchorPane.rightAnchor="10.0">
-         <children>
-            <Label layoutX="10.0" layoutY="10.0" prefHeight="20.0" prefWidth="200.0" text="Cookies de MercadoLibre:" textFill="WHITE">
-               <font>
-                  <Font name="Arial Bold" size="13.0" />
-               </font>
-            </Label>
-            <TextArea fx:id="cookiesTextArea" editable="true" layoutX="10.0" layoutY="35.0" prefHeight="75.0" prefWidth="862.0" promptText="Pega aquí las cookies de MercadoLibre..." wrapText="true" AnchorPane.leftAnchor="10.0" AnchorPane.rightAnchor="10.0">
-               <font>
-                  <Font name="Roboto" size="12.0" />
-               </font>
-            </TextArea>
-         </children>
-      </Pane>
 
-      <!-- Panel de Archivo Excel -->
-      <Pane layoutX="17.0" layoutY="140.0" prefHeight="60.0" prefWidth="865.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;" AnchorPane.leftAnchor="10.0" AnchorPane.rightAnchor="10.0">
+      <!-- Panel de Carpetas -->
+      <Pane layoutX="11.2" layoutY="12.0" prefHeight="172.0" prefWidth="878.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;" AnchorPane.leftAnchor="11.0" AnchorPane.rightAnchor="11.0">
          <children>
-            <Label layoutX="10.0" layoutY="5.0" prefHeight="20.0" prefWidth="200.0" text="Archivo Excel:" textFill="WHITE">
+            <Label layoutX="10.0" layoutY="55.0" prefHeight="20.0" prefWidth="200.0" text="Carpeta de Imágenes:" textFill="WHITE">
                <font>
                   <Font name="Arial Bold" size="13.0" />
                </font>
             </Label>
-            <TextField fx:id="ubicacionExcel" editable="false" focusTraversable="false" layoutX="10.0" layoutY="25.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona archivo Excel..." style="-fx-background-color: #242831; -fx-text-fill: white;">
+            <TextField fx:id="ubicacionCarpetaImagenes" alignment="TOP_LEFT" editable="false" focusTraversable="false" layoutX="10.0" layoutY="78.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona carpeta de imágenes..." style="-fx-background-color: #242831; -fx-text-fill: white;">
                <font>
                   <Font name="Roboto" size="13.0" />
                </font>
             </TextField>
-            <Button layoutX="718.0" layoutY="25.0" mnemonicParsing="false" onAction="#buscarExcel" prefHeight="27.0" prefWidth="147.0" style="-fx-background-color: #514398;" text="Archivo Excel" textFill="WHITE">
+            <Button layoutX="720.0" layoutY="78.0" mnemonicParsing="false" onAction="#buscarCarpetaImagenes" prefHeight="27.0" prefWidth="147.0" style="-fx-background-color: #514398;" text="Carpeta Imágenes" textFill="WHITE">
+               <font>
+                  <Font name="Arial Bold" size="12.0" />
+               </font>
+               <cursor>
+                  <Cursor fx:constant="HAND" />
+               </cursor>
+               <graphic>
+                  <ImageView fitHeight="19.0" fitWidth="19.0" preserveRatio="true" smooth="false">
+                     <image>
+                        <Image url="@../images/icons8-carpeta-de-imagenes-48.png" />
+                     </image>
+                  </ImageView>
+               </graphic>
+            </Button>
+            
+            <Label layoutX="10.0" layoutY="112.0" prefHeight="20.0" prefWidth="200.0" text="Carpeta de Videos/Clips:" textFill="WHITE">
+               <font>
+                  <Font name="Arial Bold" size="13.0" />
+               </font>
+            </Label>
+            <TextField fx:id="ubicacionCarpetaVideos" editable="false" focusTraversable="false" layoutX="10.0" layoutY="133.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona carpeta de videos/clips..." style="-fx-background-color: #242831; -fx-text-fill: white;">
+               <font>
+                  <Font name="Roboto" size="13.0" />
+               </font>
+            </TextField>
+            <Button layoutX="720.0" layoutY="133.0" mnemonicParsing="false" onAction="#buscarCarpetaVideos" prefHeight="27.0" prefWidth="147.0" style="-fx-background-color: #514398;" text="Carpeta Clips" textFill="WHITE">
+               <font>
+                  <Font name="Arial Bold" size="12.0" />
+               </font>
+               <cursor>
+                  <Cursor fx:constant="HAND" />
+               </cursor>
+               <graphic>
+                  <ImageView fitHeight="19.0" fitWidth="19.0" preserveRatio="true" smooth="false">
+                     <image>
+                        <Image url="@../images/icons8-carpeta-de-películas-48.png" />
+                     </image>
+                  </ImageView>
+               </graphic>
+            </Button>
+            <Label layoutX="10.0" layoutY="2.0" prefHeight="20.0" prefWidth="200.0" text="Archivo Excel:" textFill="WHITE">
+               <font>
+                  <Font name="Arial Bold" size="13.0" />
+               </font>
+            </Label>
+            <TextField fx:id="ubicacionExcel" editable="false" focusTraversable="false" layoutX="10.0" layoutY="23.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona archivo Excel..." style="-fx-background-color: #242831; -fx-text-fill: white;">
+               <font>
+                  <Font name="Roboto" size="13.0" />
+               </font>
+            </TextField>
+            <Button layoutX="720.0" layoutY="23.0" mnemonicParsing="false" onAction="#buscarExcel" prefHeight="27.0" prefWidth="147.0" style="-fx-background-color: #514398;" text="Archivo Excel" textFill="WHITE">
                <font>
                   <Font name="Arial Bold" size="12.0" />
                </font>
@@ -61,86 +97,8 @@
          </children>
       </Pane>
 
-      <!-- Panel de Carpetas -->
-      <Pane layoutX="17.0" layoutY="210.0" prefHeight="120.0" prefWidth="865.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;" AnchorPane.leftAnchor="10.0" AnchorPane.rightAnchor="10.0">
-         <children>
-            <Label layoutX="10.0" layoutY="10.0" prefHeight="20.0" prefWidth="200.0" text="Carpeta de Imágenes:" textFill="WHITE">
-               <font>
-                  <Font name="Arial Bold" size="13.0" />
-               </font>
-            </Label>
-            <TextField fx:id="ubicacionCarpetaImagenes" alignment="TOP_LEFT" editable="false" focusTraversable="false" layoutX="10.0" layoutY="30.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona carpeta de imágenes..." style="-fx-background-color: #242831; -fx-text-fill: white;">
-               <font>
-                  <Font name="Roboto" size="13.0" />
-               </font>
-            </TextField>
-            <Button layoutX="720.0" layoutY="30.0" mnemonicParsing="false" onAction="#buscarCarpetaImagenes" prefHeight="27.0" prefWidth="147.0" style="-fx-background-color: #514398;" text="Carpeta Imágenes" textFill="WHITE">
-               <font>
-                  <Font name="Arial Bold" size="12.0" />
-               </font>
-               <cursor>
-                  <Cursor fx:constant="HAND" />
-               </cursor>
-               <graphic>
-                  <ImageView fitHeight="19.0" fitWidth="19.0" preserveRatio="true" smooth="false">
-                     <image>
-                        <Image url="@../images/icons8-carpeta-de-imagenes-48.png" />
-                     </image>
-                  </ImageView>
-               </graphic>
-            </Button>
-            
-            <Label layoutX="10.0" layoutY="60.0" prefHeight="20.0" prefWidth="200.0" text="Carpeta de Videos/Clips:" textFill="WHITE">
-               <font>
-                  <Font name="Arial Bold" size="13.0" />
-               </font>
-            </Label>
-            <TextField fx:id="ubicacionCarpetaVideos" editable="false" focusTraversable="false" layoutX="10.0" layoutY="80.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona carpeta de videos/clips..." style="-fx-background-color: #242831; -fx-text-fill: white;">
-               <font>
-                  <Font name="Roboto" size="13.0" />
-               </font>
-            </TextField>
-            <Button layoutX="720.0" layoutY="80.0" mnemonicParsing="false" onAction="#buscarCarpetaVideos" prefHeight="27.0" prefWidth="147.0" style="-fx-background-color: #514398;" text="Carpeta Clips" textFill="WHITE">
-               <font>
-                  <Font name="Arial Bold" size="12.0" />
-               </font>
-               <cursor>
-                  <Cursor fx:constant="HAND" />
-               </cursor>
-               <graphic>
-                  <ImageView fitHeight="19.0" fitWidth="19.0" preserveRatio="true" smooth="false">
-                     <image>
-                        <Image url="@../images/icons8-carpeta-de-películas-48.png" />
-                     </image>
-                  </ImageView>
-               </graphic>
-            </Button>
-         </children>
-      </Pane>
-
-      <!-- Panel de Configuración -->
-      <Pane layoutX="17.0" layoutY="340.0" prefHeight="60.0" prefWidth="366.0" style="-fx-background-color: #1c1f28; -fx-background-radius: 5;" AnchorPane.leftAnchor="10.0" AnchorPane.rightAnchor="10.0">
-         <children>
-            <Label layoutX="10.0" layoutY="4.0" prefHeight="20.0" prefWidth="200.0" text="Requests por segundo:" textFill="WHITE">
-               <font>
-                  <Font name="Arial Bold" size="13.0" />
-               </font>
-            </Label>
-            <TextField fx:id="requestsPorSegundo" alignment="CENTER" editable="true" focusTraversable="true" layoutX="10.0" layoutY="25.0" prefHeight="27.0" prefWidth="40.0" promptText="5" style="-fx-background-color: #242831; -fx-text-fill: white;">
-               <font>
-                  <Font name="Roboto" size="13.0" />
-               </font>
-            </TextField>
-            <Label layoutX="53.0" layoutY="29.0" prefHeight="20.0" prefWidth="306.0" text="(Velocidad de verificación de videos. Valor recomendado: 3-5)" textFill="#888888">
-               <font>
-                  <Font name="Roboto" size="11.0" />
-               </font>
-            </Label>
-         </children>
-      </Pane>
-
       <!-- Botón de ejecución -->
-      <Button fx:id="buscarButton" alignment="CENTER" layoutX="274.0" layoutY="424.0" mnemonicParsing="false" onAction="#buscarImagenesYVideos" prefHeight="50.0" prefWidth="352.0" style="-fx-background-color: #514398; -fx-background-radius: 5;" text="Buscar Videos e Imágenes" textAlignment="CENTER" textFill="WHITE" wrapText="true">
+      <Button fx:id="buscarButton" alignment="CENTER" layoutX="274.0" layoutY="204.0" mnemonicParsing="false" onAction="#buscarImagenesYVideos" prefHeight="50.0" prefWidth="352.0" style="-fx-background-color: #514398; -fx-background-radius: 5;" text="Buscar Videos e Imágenes" textAlignment="CENTER" textFill="WHITE" wrapText="true">
          <font>
             <Font name="Consolas Bold" size="20.0" />
          </font>
@@ -157,15 +115,15 @@
       </Button>
 
       <!-- Progress Indicator -->
-      <ProgressIndicator fx:id="progressIndicator" layoutX="637.0" layoutY="429.0" prefHeight="40.0" prefWidth="40.0" visible="false" />
+      <ProgressIndicator fx:id="progressIndicator" layoutX="635.0" layoutY="219.0" prefHeight="40.0" prefWidth="40.0" visible="false" />
 
       <!-- Área de Logs -->
-      <Label layoutX="10.0" layoutY="474.0" prefHeight="16.0" prefWidth="62.0" text="Logs:" textFill="WHITE">
+      <Label layoutX="10.0" layoutY="264.0" prefHeight="16.0" prefWidth="62.0" text="Logs:" textFill="WHITE">
          <font>
             <Font name="Arial Bold" size="13.0" />
          </font>
       </Label>
-      <TextArea fx:id="logTextArea" editable="false" layoutX="11.2" layoutY="491.0" prefHeight="198.0" prefWidth="879.0" style="-fx-background-radius: 5;" AnchorPane.bottomAnchor="10.0" AnchorPane.leftAnchor="11.0" AnchorPane.rightAnchor="10.0">
+      <TextArea fx:id="logTextArea" editable="false" layoutX="11.0" layoutY="282.0" prefHeight="256.0" prefWidth="878.0" style="-fx-background-radius: 5;" AnchorPane.bottomAnchor="10.0" AnchorPane.leftAnchor="11.0" AnchorPane.rightAnchor="11.0">
          <font>
             <Font name="Roboto" size="12.0" />
          </font>

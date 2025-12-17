@@ -24,13 +24,9 @@ public class VentanaController implements Initializable {
     private TextField ubicacionCarpetaImagenes;
     @FXML
     private TextField ubicacionCarpetaVideos;
-    @FXML
-    private TextField requestsPorSegundo;
 
     @FXML
     private TextArea logTextArea;
-    @FXML
-    private TextArea cookiesTextArea;
     @FXML
     private ProgressIndicator progressIndicator;
     @FXML
@@ -73,14 +69,6 @@ public class VentanaController implements Initializable {
         } else {
             carpetaVideos = null;
         }
-
-        String cookies = prefs.get("cookies", "");
-        if (!cookies.isBlank()) {
-            cookiesTextArea.setText(cookies);
-        }
-
-        String requestsPorSeg = prefs.get("requestsPorSegundo", "5");
-        requestsPorSegundo.setText(requestsPorSeg);
     }
 
     private void savePreferences() {
@@ -89,8 +77,6 @@ public class VentanaController implements Initializable {
         prefs.put("ubicacionExcel", ubicacionExcel.getText());
         prefs.put("ubicacionCarpetaImagenes", ubicacionCarpetaImagenes.getText());
         prefs.put("ubicacionCarpetaVideos", ubicacionCarpetaVideos.getText());
-        prefs.put("cookies", cookiesTextArea.getText());
-        prefs.put("requestsPorSegundo", requestsPorSegundo.getText());
     }
 
     @FXML
@@ -166,22 +152,6 @@ public class VentanaController implements Initializable {
         logTextArea.clear();
         logTextArea.setStyle("-fx-text-fill: firebrick;");
 
-        // Validar cookies
-        String cookies = cookiesTextArea.getText().trim();
-        if (cookies.isBlank()) {
-            logTextArea.appendText("❌ Error: Debes ingresar las cookies de MercadoLibre.\n\n");
-            logTextArea.appendText("Instrucciones para obtener las cookies:\n");
-            logTextArea.appendText("1. Abre el navegador -> Presiona F12\n");
-            logTextArea.appendText("2. Ve a Mercado Libre (debes estar logueado)\n");
-            logTextArea.appendText("3. Presiona la pestaña 'Network' o 'Red'\n");
-            logTextArea.appendText("4. Recarga la página o navega por el sitio\n");
-            logTextArea.appendText("5. Click en el primer resultado de la lista\n");
-            logTextArea.appendText("6. Ve a 'Headers' -> 'Request Headers'\n");
-            logTextArea.appendText("7. Busca 'Cookie' y copia TODO su valor\n");
-            logTextArea.appendText("8. Pega el valor completo en el campo de cookies\n");
-            return;
-        }
-
         // Validar Excel (requerido)
         if (excelFile == null || !excelFile.isFile()) {
             logTextArea.appendText("❌ Error: Debes seleccionar un archivo Excel válido.\n");
@@ -203,26 +173,7 @@ public class VentanaController implements Initializable {
             return;
         }
 
-        // Validar y obtener requests por segundo
-        double requestsPorSeg = 5.0; // Valor por defecto
-        try {
-            String requestsText = requestsPorSegundo.getText().trim();
-            if (!requestsText.isBlank()) {
-                requestsPorSeg = Double.parseDouble(requestsText);
-                if (requestsPorSeg <= 0 || requestsPorSeg > 20) {
-                    logTextArea.appendText(
-                            "⚠️ Advertencia: Requests por segundo debe estar entre 0.1 y 20. Usando valor por defecto: 5\n");
-                    requestsPorSeg = 5.0;
-                }
-            }
-        } catch (NumberFormatException e) {
-            logTextArea.appendText(
-                    "⚠️ Advertencia: Valor inválido en 'Requests por segundo'. Usando valor por defecto: 5\n");
-            requestsPorSeg = 5.0;
-        }
-
-        ScrapperService service = new ScrapperService(excelFile, carpetaImagenes, carpetaVideos, cookies,
-                requestsPorSeg);
+        ScrapperService service = new ScrapperService(excelFile, carpetaImagenes, carpetaVideos);
 
         service.messageProperty().addListener((obs, old, nuevo) -> {
             if (nuevo != null && !nuevo.isBlank()) {

@@ -14,15 +14,8 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-import com.google.common.util.concurrent.RateLimiter;
-
 import java.io.*;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.*;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -36,11 +29,6 @@ public class ScrapperService extends Service<Void> {
     private static final ExecutorService executor = Executors.newFixedThreadPool(POOL_SIZE);
     private static final ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
 
-    private static final int TIMEOUT_SECONDS = 15;
-    private static final String BUSQUEDA = "alt=\"clip-icon\"";
-    private static final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(TIMEOUT_SECONDS)).build();
-
     // Sets para búsqueda más rápida de extensiones
     private static final Set<String> IMAGE_EXTENSIONS_SET = Set.of(".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp");
     private static final Set<String> VIDEO_EXTENSIONS_SET = Set.of(".mp4", ".avi", ".mov", ".mkv", ".wmv", ".flv",
@@ -49,19 +37,11 @@ public class ScrapperService extends Service<Void> {
     private final File excelFile;
     private final File carpetaImagenes;
     private final File carpetaVideos;
-    private final String cookieHeader;
-    private final double requestsPorSegundo;
-    private RateLimiter videoRateLimiter; // Rate limiter dinámico
 
-    public ScrapperService(File excelFile, File carpetaImagenes, File carpetaVideos, String cookieHeader,
-            double requestsPorSegundo) {
+    public ScrapperService(File excelFile, File carpetaImagenes, File carpetaVideos) {
         this.excelFile = excelFile;
         this.carpetaImagenes = carpetaImagenes;
         this.carpetaVideos = carpetaVideos;
-        this.cookieHeader = cookieHeader;
-        this.requestsPorSegundo = requestsPorSegundo;
-        // Crear rate limiter con el valor especificado
-        this.videoRateLimiter = RateLimiter.create(requestsPorSegundo);
     }
 
     @Override
@@ -115,261 +95,172 @@ public class ScrapperService extends Service<Void> {
         validarAccesoCarpeta(carpetaImagenesPath, "imágenes");
         validarAccesoCarpeta(carpetaVideosPath, "videos");
 
-        if (cookiesValidas(cookieHeader)) {
-            AppLogger.info("Cookies válidas.");
+        final List<ProductoData> productoList = obtenerDatos();
 
-            final List<ProductoData> productoList = obtenerDatos();
-
-            AppLogger.info("Verificando videos en " + productoList.size() + " productos...");
-            List<Callable<Void>> tasks = new ArrayList<>();
-            for (ProductoData productoData : productoList) {
-                tasks.add(() -> {
-                    // Obtener datos de performance (score, nivel y video)
-                    String videoResult = obtenerDatosDePerformance(productoData);
-                    productoData.tieneVideo = videoResult;
-                    return null;
-                });
-            }
-            ejecutarBloque(tasks);
-            AppLogger.info("Verificación de videos completada.");
-
-            // Ordenamiento
-            productoList.sort(Comparator
-                    .comparing((ProductoData p) -> p.status, Comparator.nullsFirst(String::compareTo))
-                    .thenComparing(p -> p.mla, Comparator.nullsFirst(String::compareTo))
-                    .thenComparing(p -> p.cantidadImagenes)
-                    .thenComparing(p -> p.tieneVideo, Comparator.nullsFirst(String::compareTo))
-                    .thenComparing(p -> p.sku, Comparator.nullsFirst(String::compareTo)));
-
-            // Excel
-            final Path excelPath = excelFile.toPath();
-
-            // Validar que el archivo Excel exista
-            if (!Files.exists(excelPath)) {
-                throw new IllegalArgumentException("El archivo Excel no existe: " + excelPath +
-                        ". Por favor, crea el archivo Excel antes de ejecutar el proceso.");
-            }
-
-            AppLogger.info("Abriendo archivo Excel...");
-
-            // Configurar límite de detección de Zip bomb para archivos con alta compresión
-            ZipSecureFile.setMinInflateRatio(0.001);
-
-            try (FileInputStream fis = new FileInputStream(excelFile);
-                    Workbook workbook = new XSSFWorkbook(fis)) {
-
-                // Verificar que tenga al menos 2 hojas
-                if (workbook.getNumberOfSheets() < 2) {
-                    throw new IllegalArgumentException("El archivo Excel debe tener al menos 2 hojas. " +
-                            "Hojas encontradas: " + workbook.getNumberOfSheets());
-                }
-
-                Sheet scanSheet = workbook.getSheetAt(1); // 2da hoja
-
-                // ==========================
-                // Limpiar datos existentes (excepto encabezado)
-                // ==========================
-                int lastRowNum = scanSheet.getLastRowNum();
-                if (lastRowNum > 0) {
-                    AppLogger.info("Limpiando " + lastRowNum + " filas existentes...");
-                    // Eliminar filas desde la última hasta la primera (excepto fila 0 que es el
-                    // encabezado)
-                    // Usar removeRow en lugar de shiftRows para evitar problemas con muchas filas
-                    for (int i = lastRowNum; i > 0; i--) {
-                        Row row = scanSheet.getRow(i);
-                        if (row != null) {
-                            scanSheet.removeRow(row);
-                        }
-                    }
-                }
-
-                // Estilos (se reutilizarán más adelante)
-                CellStyle headerStyle = crearHeaderStyle(workbook);
-                CellStyle centeredStyle = crearCenteredStyle(workbook);
-
-                // ==========================
-                // Encabezados
-                // ==========================
-                Row header = scanSheet.getRow(0);
-                if (header == null) {
-                    header = scanSheet.createRow(0);
-                }
-                header.createCell(0).setCellValue("ESTADO");
-                header.createCell(1).setCellValue("MLA");
-                header.createCell(2).setCellValue("IMAGENES");
-                header.createCell(3).setCellValue("VIDEOS");
-                header.createCell(4).setCellValue("SKU");
-                header.createCell(5).setCellValue("URL");
-                header.createCell(6).setCellValue("TIPO PUBLICACION");
-                header.createCell(7).setCellValue("IMAGENES EN CARPETA");
-                header.createCell(8).setCellValue("VIDEOS EN CARPETA");
-                header.createCell(9).setCellValue("CONCLUSION IMAGENES");
-                header.createCell(10).setCellValue("CONCLUSION VIDEOS");
-                header.createCell(11).setCellValue("SCORE");
-                header.createCell(12).setCellValue("NIVEL");
-                header.createCell(13).setCellValue("CORREGIR");
-
-                aplicarStyleFila(header, headerStyle);
-
-                // ==========================
-                // Cargar productos y variaciones
-                // ==========================
-                int rowNum = 1;
-                for (ProductoData p : productoList) {
-                    Row row = scanSheet.createRow(rowNum++);
-
-                    // Formatear MLA: si es variación, mostrar "MLA (MLAU)"
-                    String mlaDisplay = p.esVariacion && p.userProductId != null
-                            ? (p.mla + " (" + p.userProductId + ")")
-                            : p.mla;
-
-                    row.createCell(0).setCellValue(p.status);
-                    row.createCell(1).setCellValue(mlaDisplay);
-                    row.createCell(2).setCellValue(p.cantidadImagenes);
-                    row.createCell(3).setCellValue(p.tieneVideo);
-                    row.createCell(4).setCellValue(p.sku);
-                    row.createCell(5).setCellValue(p.permalink);
-                    row.createCell(6).setCellValue(p.tipoPublicacion);
-                    // Las columnas IMAGENES EN CARPETA, VIDEOS EN CARPETA, CONCLUSION IMAGENES y
-                    // CONCLUSION VIDEOS
-                    // se llenarán más adelante en actualizarExcelConArchivos
-
-                    // SCORE: si es null, dejar celda vacía, si no, poner el número
-                    Cell cellScore = row.createCell(11);
-                    if (p.score != null) {
-                        cellScore.setCellValue(p.score);
-                    } else {
-                        cellScore.setCellValue("");
-                    }
-                    // Aplicar estilo según el nivel
-                    cellScore.setCellStyle(obtenerEstiloPorNivel(workbook, p.nivel));
-
-                    // NIVEL: si es null, dejar celda vacía
-                    Cell cellNivel = row.createCell(12);
-                    cellNivel.setCellValue(p.nivel != null ? p.nivel : "");
-                    // Aplicar estilo según el nivel
-                    cellNivel.setCellStyle(obtenerEstiloPorNivel(workbook, p.nivel));
-
-                    // CORREGIR: títulos de keys con status PENDING (última columna)
-                    row.createCell(13).setCellValue(p.corregir != null ? p.corregir : "");
-
-                    // Aplicar estilo a todas las celdas excepto SCORE y NIVEL (que ya tienen su
-                    // estilo)
-                    aplicarStyleFilaExcluyendo(row, centeredStyle, 11, 12);
-                }
-
-                // ==========================
-                // Buscar archivos en carpetas y actualizar Excel (sin guardar aún)
-                // ==========================
-                AppLogger.info("Buscando archivos en carpetas...");
-                actualizarExcelConArchivos(workbook, scanSheet, carpetaImagenesPath, carpetaVideosPath, headerStyle,
-                        centeredStyle);
-
-                // ==========================
-                // Guardar archivo una sola vez al final
-                // ==========================
-                AppLogger.info("Guardando archivo Excel...");
-                try (FileOutputStream fos = new FileOutputStream(excelFile)) {
-                    workbook.write(fos);
-                    fos.flush();
-                } catch (Exception ex) {
-                    AppLogger.error("Error al guardar Excel: " + ex.getMessage(), ex);
-                    throw ex;
-                } finally {
-                    // Limpiar caché de estilos después de usar el workbook
-                    limpiarCacheEstilos(workbook);
-                }
-                String fechaHoraFin = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
-                AppLogger.info("[" + fechaHoraFin + "] Proceso finalizado exitosamente.");
-            } catch (Exception e) {
-                throw e;
-            }
-        } else {
-            throw new IllegalArgumentException(
-                    "Cookies inválidas. Por favor verifica que estés logueado en MercadoLibre.");
+        AppLogger.info("Verificando videos en " + productoList.size() + " productos...");
+        List<Callable<Void>> tasks = new ArrayList<>();
+        for (ProductoData productoData : productoList) {
+            tasks.add(() -> {
+                // Obtener datos de performance (score, nivel y video)
+                String videoResult = obtenerDatosDePerformance(productoData);
+                productoData.tieneVideo = videoResult;
+                return null;
+            });
         }
-    }
+        ejecutarBloque(tasks);
+        AppLogger.info("Verificación de videos completada.");
 
-    private String verificarVideo(String url, String cookieHeader) {
-        return verificarVideo(url, cookieHeader, 0);
-    }
+        // Ordenamiento
+        productoList.sort(Comparator
+                .comparing((ProductoData p) -> p.status, Comparator.nullsFirst(String::compareTo))
+                .thenComparing(p -> p.mla, Comparator.nullsFirst(String::compareTo))
+                .thenComparing(p -> p.cantidadImagenes)
+                .thenComparing(p -> p.tieneVideo, Comparator.nullsFirst(String::compareTo))
+                .thenComparing(p -> p.sku, Comparator.nullsFirst(String::compareTo)));
 
-    private String verificarVideo(String url, String cookieHeader, int intentos) {
-        // Límite de recursión para evitar StackOverflowError
-        if (intentos >= 5) {
-            AppLogger.warn("Límite de reintentos alcanzado para: " + url);
-            return "ERROR: Límite de reintentos alcanzado";
+        // Excel
+        final Path excelPath = excelFile.toPath();
+
+        // Validar que el archivo Excel exista
+        if (!Files.exists(excelPath)) {
+            throw new IllegalArgumentException("El archivo Excel no existe: " + excelPath +
+                    ". Por favor, crea el archivo Excel antes de ejecutar el proceso.");
         }
 
-        int status = 0;
-        try {
-            // Aplicar rate limiting para evitar bloqueos
-            videoRateLimiter.acquire();
+        AppLogger.info("Abriendo archivo Excel...");
 
-            final HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
-                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N)")
-                    .header("Accept",
-                            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
-                    .header("Accept-Language", "es-AR,es;q=0.9,en;q=0.8")
-                    .header("Referer", "https://www.mercadolibre.com.ar/")
-                    .header("Cookie", cookieHeader) // 👈 cookie
-                    .GET()
-                    .build();
+        // Configurar límite de detección de Zip bomb para archivos con alta compresión
+        ZipSecureFile.setMinInflateRatio(0.001);
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            final String html = response.body();
-            status = response.statusCode();
+        try (FileInputStream fis = new FileInputStream(excelFile);
+                Workbook workbook = new XSSFWorkbook(fis)) {
 
-            switch (status) {
-                case 200:
-                    if (html.contains(BUSQUEDA)) {
-                        return "SI";
-                    } else {
-                        return "NO";
-                    }
-                case 301:
-                case 302:
-                case 303:
-                case 307:
-                case 308:
-                    if (html.startsWith("Moved Permanently") || html.contains("Redirecting to ")) {
-                        int idx = html.indexOf("Redirecting to ");
-                        if (idx != -1) {
-                            String newUrl = html.substring(idx + "Redirecting to ".length()).replace("</p>", "").trim();
-                            // Reintentar con la nueva URL (si cambió)
-                            if (!newUrl.equals(request.uri().toString())) {
-                                AppLogger.info("URL vieja: " + url + " - URL actualizada: " + newUrl);
-                                return verificarVideo(newUrl, cookieHeader, intentos + 1);
-                            }
-                        }
-                    }
-                    break;
-                case 404:
-                case 410:
-                    return "NO EXISTE";
-                case 403:
-                case 424:
-                    AppLogger.info("Too many requests.");
-                    Thread.sleep(60000);
-                    return verificarVideo(url, cookieHeader, intentos + 1);
-                case 500:
-                case 502:
-                case 503:
-                case 504:
-                    AppLogger.info("Internal server error.");
-                    Thread.sleep(5000);
-                    return verificarVideo(url, cookieHeader, intentos + 1);
-                default:
-                    return "STATUS: " + status;
+            // Verificar que tenga al menos 2 hojas
+            if (workbook.getNumberOfSheets() < 2) {
+                throw new IllegalArgumentException("El archivo Excel debe tener al menos 2 hojas. " +
+                        "Hojas encontradas: " + workbook.getNumberOfSheets());
             }
+
+            Sheet scanSheet = workbook.getSheetAt(1); // 2da hoja
+
+            // ==========================
+            // Limpiar datos existentes (excepto encabezado)
+            // ==========================
+            int lastRowNum = scanSheet.getLastRowNum();
+            if (lastRowNum > 0) {
+                AppLogger.info("Limpiando " + lastRowNum + " filas existentes...");
+                // Eliminar filas desde la última hasta la primera (excepto fila 0 que es el
+                // encabezado)
+                // Usar removeRow en lugar de shiftRows para evitar problemas con muchas filas
+                for (int i = lastRowNum; i > 0; i--) {
+                    Row row = scanSheet.getRow(i);
+                    if (row != null) {
+                        scanSheet.removeRow(row);
+                    }
+                }
+            }
+
+            // Estilos (se reutilizarán más adelante)
+            CellStyle headerStyle = crearHeaderStyle(workbook);
+            CellStyle centeredStyle = crearCenteredStyle(workbook);
+
+            // ==========================
+            // Encabezados
+            // ==========================
+            Row header = scanSheet.getRow(0);
+            if (header == null) {
+                header = scanSheet.createRow(0);
+            }
+            header.createCell(0).setCellValue("ESTADO");
+            header.createCell(1).setCellValue("MLA");
+            header.createCell(2).setCellValue("IMAGENES");
+            header.createCell(3).setCellValue("VIDEOS");
+            header.createCell(4).setCellValue("SKU");
+            header.createCell(5).setCellValue("URL");
+            header.createCell(6).setCellValue("TIPO PUBLICACION");
+            header.createCell(7).setCellValue("IMAGENES EN CARPETA");
+            header.createCell(8).setCellValue("VIDEOS EN CARPETA");
+            header.createCell(9).setCellValue("CONCLUSION IMAGENES");
+            header.createCell(10).setCellValue("CONCLUSION VIDEOS");
+            header.createCell(11).setCellValue("SCORE");
+            header.createCell(12).setCellValue("NIVEL");
+            header.createCell(13).setCellValue("CORREGIR");
+
+            aplicarStyleFila(header, headerStyle);
+
+            // ==========================
+            // Cargar productos y variaciones
+            // ==========================
+            int rowNum = 1;
+            for (ProductoData p : productoList) {
+                Row row = scanSheet.createRow(rowNum++);
+
+                // Formatear MLA: si es variación, mostrar "MLA (MLAU)"
+                String mlaDisplay = p.esVariacion && p.userProductId != null
+                        ? (p.mla + " (" + p.userProductId + ")")
+                        : p.mla;
+
+                row.createCell(0).setCellValue(p.status);
+                row.createCell(1).setCellValue(mlaDisplay);
+                row.createCell(2).setCellValue(p.cantidadImagenes);
+                row.createCell(3).setCellValue(p.tieneVideo);
+                row.createCell(4).setCellValue(p.sku);
+                row.createCell(5).setCellValue(p.permalink);
+                row.createCell(6).setCellValue(p.tipoPublicacion);
+                // Las columnas IMAGENES EN CARPETA, VIDEOS EN CARPETA, CONCLUSION IMAGENES y
+                // CONCLUSION VIDEOS
+                // se llenarán más adelante en actualizarExcelConArchivos
+
+                // SCORE: si es null, dejar celda vacía, si no, poner el número
+                Cell cellScore = row.createCell(11);
+                if (p.score != null) {
+                    cellScore.setCellValue(p.score);
+                } else {
+                    cellScore.setCellValue("");
+                }
+                // Aplicar estilo según el nivel
+                cellScore.setCellStyle(obtenerEstiloPorNivel(workbook, p.nivel));
+
+                // NIVEL: si es null, dejar celda vacía
+                Cell cellNivel = row.createCell(12);
+                cellNivel.setCellValue(p.nivel != null ? p.nivel : "");
+                // Aplicar estilo según el nivel
+                cellNivel.setCellStyle(obtenerEstiloPorNivel(workbook, p.nivel));
+
+                // CORREGIR: títulos de keys con status PENDING (última columna)
+                row.createCell(13).setCellValue(p.corregir != null ? p.corregir : "");
+
+                // Aplicar estilo a todas las celdas excepto SCORE y NIVEL (que ya tienen su
+                // estilo)
+                aplicarStyleFilaExcluyendo(row, centeredStyle, 11, 12);
+            }
+
+            // ==========================
+            // Buscar archivos en carpetas y actualizar Excel (sin guardar aún)
+            // ==========================
+            AppLogger.info("Buscando archivos en carpetas...");
+            actualizarExcelConArchivos(workbook, scanSheet, carpetaImagenesPath, carpetaVideosPath, headerStyle,
+                    centeredStyle);
+
+            // ==========================
+            // Guardar archivo una sola vez al final
+            // ==========================
+            AppLogger.info("Guardando archivo Excel...");
+            try (FileOutputStream fos = new FileOutputStream(excelFile)) {
+                workbook.write(fos);
+                fos.flush();
+            } catch (Exception ex) {
+                AppLogger.error("Error al guardar Excel: " + ex.getMessage(), ex);
+                throw ex;
+            } finally {
+                // Limpiar caché de estilos después de usar el workbook
+                limpiarCacheEstilos(workbook);
+            }
+            String fechaHoraFin = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
+            AppLogger.info("[" + fechaHoraFin + "] Proceso finalizado exitosamente.");
         } catch (Exception e) {
-            AppLogger.error("Error en url: " + url + " - status: " + status + " -> " + e.getMessage(), e);
-            return "ERROR: " + e.getMessage();
+            throw e;
         }
-
-        return "ERROR: " + status;
     }
 
     /**
@@ -613,52 +504,6 @@ public class ScrapperService extends Service<Void> {
             AppLogger.warn("Error al extraer SKU de variación: " + e.getMessage());
         }
         return null;
-    }
-
-    public static boolean cookiesValidas(String cookieHeader) {
-        try {
-            HttpClient client = HttpClient.newBuilder()
-                    .followRedirects(HttpClient.Redirect.NEVER) // importante
-                    .build();
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://www.mercadolibre.com.ar/pampa/profile"))
-                    .header("User-Agent", "Mozilla/5.0")
-                    .header("Cookie", cookieHeader)
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-            int status = response.statusCode();
-
-            // ============================
-            // VALIDACIONES DE LOGIN
-            // ============================
-
-            // 302 → redirige al login → NO logeado
-            if (status == 302)
-                return false;
-
-            // 401 o 403 → NO autorizado → NO logeado
-            if (status == 401 || status == 403)
-                return false;
-
-            // 200 → verificar contenido
-            if (status == 200) {
-                String body = response.body();
-                // si contiene datos personales → usuario logeado
-                if (body.contains("myaccount") || body.contains("Mi cuenta") || body.contains("profile")) {
-                    return true;
-                }
-            }
-
-            return false;
-
-        } catch (Exception e) {
-            AppLogger.error("Error verificando cookies: " + e.getMessage(), e);
-            return false;
-        }
     }
 
     public static String getSku(List<Producto.Attribute> attributes) {
