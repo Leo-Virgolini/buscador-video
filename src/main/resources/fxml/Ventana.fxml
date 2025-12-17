@@ -115,7 +115,7 @@
       </Button>
 
       <!-- Progress Indicator -->
-      <ProgressIndicator fx:id="progressIndicator" layoutX="635.0" layoutY="219.0" prefHeight="40.0" prefWidth="40.0" visible="false" />
+      <ProgressIndicator fx:id="progressIndicator" layoutX="636.0" layoutY="204.0" prefHeight="50.0" prefWidth="50.0" visible="false" />
 
       <!-- Área de Logs -->
       <Label layoutX="10.0" layoutY="264.0" prefHeight="16.0" prefWidth="62.0" text="Logs:" textFill="WHITE">
