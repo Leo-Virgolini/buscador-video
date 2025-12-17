@@ -100,9 +100,6 @@ public class ScrapperService extends Service<Void> {
     }
 
     public void run() throws Exception {
-        String fechaHoraInicio = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
-        AppLogger.info("[" + fechaHoraInicio + "] Iniciando proceso...");
-
         // Verificar que el archivo no esté en uso
         try (RandomAccessFile raf = new RandomAccessFile(excelFile, "rw")) {
             // Si se puede abrir, está disponible
@@ -127,9 +124,9 @@ public class ScrapperService extends Service<Void> {
             List<Callable<Void>> tasks = new ArrayList<>();
             for (ProductoData productoData : productoList) {
                 tasks.add(() -> {
-                    String videoResult = this.verificarVideo(productoData.permalink, cookieHeader);
-                    // verificarVideo retorna "SI", "NO", "NO EXISTE", "ERROR: ...", etc.
-                    productoData.tieneVideo = "SI".equals(videoResult) ? "SI" : "NO";
+                    // Obtener datos de performance (score, nivel y video)
+                    String videoResult = obtenerDatosDePerformance(productoData);
+                    productoData.tieneVideo = videoResult;
                     return null;
                 });
             }
@@ -204,10 +201,13 @@ public class ScrapperService extends Service<Void> {
                 header.createCell(4).setCellValue("SKU");
                 header.createCell(5).setCellValue("URL");
                 header.createCell(6).setCellValue("TIPO PUBLICACION");
-                header.createCell(7).setCellValue("IMAGENES EN CARPETA");
-                header.createCell(8).setCellValue("VIDEOS EN CARPETA");
-                header.createCell(9).setCellValue("CONCLUSION IMAGENES");
-                header.createCell(10).setCellValue("CONCLUSION VIDEOS");
+                header.createCell(7).setCellValue("SCORE");
+                header.createCell(8).setCellValue("NIVEL");
+                header.createCell(9).setCellValue("IMAGENES EN CARPETA");
+                header.createCell(10).setCellValue("VIDEOS EN CARPETA");
+                header.createCell(11).setCellValue("CONCLUSION IMAGENES");
+                header.createCell(12).setCellValue("CONCLUSION VIDEOS");
+                header.createCell(13).setCellValue("CORREGIR");
 
                 aplicarStyleFila(header, headerStyle);
 
@@ -218,9 +218,9 @@ public class ScrapperService extends Service<Void> {
                 for (ProductoData p : productoList) {
                     Row row = scanSheet.createRow(rowNum++);
 
-                    // Formatear MLA: si es variación, mostrar el MLAU
-                    String mlaDisplay = p.esVariacion
-                            ? (p.mla + " (VAR: " + p.userProductId + ")")
+                    // Formatear MLA: si es variación, mostrar "MLA (MLAU)"
+                    String mlaDisplay = p.esVariacion && p.userProductId != null
+                            ? (p.mla + " (" + p.userProductId + ")")
                             : p.mla;
 
                     row.createCell(0).setCellValue(p.status);
@@ -230,6 +230,16 @@ public class ScrapperService extends Service<Void> {
                     row.createCell(4).setCellValue(p.sku);
                     row.createCell(5).setCellValue(p.permalink);
                     row.createCell(6).setCellValue(p.tipoPublicacion);
+                    // SCORE: si es null, dejar celda vacía, si no, poner el número
+                    if (p.score != null) {
+                        row.createCell(7).setCellValue(p.score);
+                    } else {
+                        row.createCell(7).setCellValue("");
+                    }
+                    // NIVEL: si es null, dejar celda vacía
+                    row.createCell(8).setCellValue(p.nivel != null ? p.nivel : "");
+                    // CORREGIR: títulos de keys con status PENDING (última columna)
+                    row.createCell(13).setCellValue(p.corregir != null ? p.corregir : "");
 
                     aplicarStyleFila(row, centeredStyle);
                 }
@@ -348,6 +358,143 @@ public class ScrapperService extends Service<Void> {
         return "ERROR: " + status;
     }
 
+    /**
+     * Obtiene los datos de performance de un producto: score, nivel y verificación
+     * de video.
+     * Usa la API de performance de MercadoLibre.
+     * Para productos catálogo usa el MLA de item_relations, para variaciones usa el
+     * MLAU.
+     * Busca la regla "UP_HAS_SHORTS" en el JSON de performance para determinar si
+     * tiene video.
+     * 
+     * @param productoData El producto a procesar (se actualizan score, nivel y
+     *                     tieneVideo)
+     * @return "SI" si tiene video (status COMPLETED), "NO" si no tiene (status
+     *         PENDING), o "ERROR" si hay problemas
+     */
+    private String obtenerDatosDePerformance(ProductoData productoData) {
+        try {
+            // Obtener el ID del producto para el performance
+            // Para productos normales: usar mlaParaPerformance (puede ser de item_relations
+            // si es catálogo)
+            // Para variaciones: usar el MLA del padre (mla)
+            String itemId = productoData.esVariacion
+                    ? productoData.mla // Para variaciones, usar el MLA del padre
+                    : productoData.mlaParaPerformance;
+
+            // Obtener performance del producto usando siempre getItemPerformanceByMLA
+            JsonNode performance = MercadoLibreAPI.getItemPerformanceByMLA(itemId);
+
+            if (performance == null) {
+                AppLogger.warn("No se pudo obtener performance para " + itemId);
+                return "NO";
+            }
+
+            // Extraer score y level_wording del JSON
+            JsonNode scoreNode = performance.path("score");
+            if (!scoreNode.isNull() && scoreNode.isNumber()) {
+                productoData.score = scoreNode.asInt();
+            }
+
+            JsonNode levelWordingNode = performance.path("level_wording");
+            if (!levelWordingNode.isNull()) {
+                productoData.nivel = levelWordingNode.asString();
+            }
+
+            // Extraer títulos de variables con status PENDING (solo de variables, no de
+            // buckets)
+            List<String> titulosPendientes = new ArrayList<>();
+            JsonNode buckets = performance.path("buckets");
+            if (buckets.isArray()) {
+                for (JsonNode bucket : buckets) {
+                    // Verificar variables dentro del bucket
+                    JsonNode variables = bucket.path("variables");
+                    if (variables.isArray()) {
+                        for (JsonNode variable : variables) {
+                            JsonNode variableStatusNode = variable.path("status");
+                            String variableStatus = variableStatusNode.isNull() ? "" : variableStatusNode.asString();
+                            if ("PENDING".equals(variableStatus)) {
+                                JsonNode variableTitleNode = variable.path("title");
+                                if (!variableTitleNode.isNull()) {
+                                    String variableTitle = variableTitleNode.asString("");
+                                    if (variableTitle != null && !variableTitle.isEmpty()) {
+                                        titulosPendientes.add(variableTitle);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Unir los títulos con " | " y guardar en productoData
+            if (!titulosPendientes.isEmpty()) {
+                productoData.corregir = String.join(" | ", titulosPendientes);
+            } else {
+                productoData.corregir = "";
+            }
+
+            // Buscar en buckets → buscar bucket con type "USER_PRODUCT" para verificar
+            // video
+            if (!buckets.isArray()) {
+                return "NO";
+            }
+
+            for (JsonNode bucket : buckets) {
+                JsonNode bucketTypeNode = bucket.path("type");
+                String bucketType = bucketTypeNode.isNull() ? "" : bucketTypeNode.asString();
+
+                // Buscar el bucket de tipo USER_PRODUCT
+                if ("USER_PRODUCT".equals(bucketType)) {
+                    JsonNode variables = bucket.path("variables");
+                    if (!variables.isArray()) {
+                        continue;
+                    }
+
+                    // Buscar la variable con key "UP_SHORTS"
+                    for (JsonNode variable : variables) {
+                        JsonNode variableKeyNode = variable.path("key");
+                        String variableKey = variableKeyNode.isNull() ? "" : variableKeyNode.asString();
+
+                        if ("UP_SHORTS".equals(variableKey)) {
+                            JsonNode rules = variable.path("rules");
+                            if (!rules.isArray()) {
+                                continue;
+                            }
+
+                            // Buscar la regla con key "UP_HAS_SHORTS"
+                            for (JsonNode rule : rules) {
+                                JsonNode ruleKeyNode = rule.path("key");
+                                String ruleKey = ruleKeyNode.isNull() ? "" : ruleKeyNode.asString();
+
+                                if ("UP_HAS_SHORTS".equals(ruleKey)) {
+                                    JsonNode statusNode = rule.path("status");
+                                    String status = statusNode.isNull() ? "" : statusNode.asString();
+
+                                    // Si el status es "COMPLETED", tiene video
+                                    if ("COMPLETED".equals(status)) {
+                                        return "SI";
+                                    } else {
+                                        // PENDING u otro estado = no tiene video
+                                        return "NO";
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Si no se encontró la regla, asumir que no tiene video
+            return "NO";
+
+        } catch (Exception e) {
+            AppLogger.error("Error al verificar video por performance para " + productoData.mla + ": " + e.getMessage(),
+                    e);
+            return "ERROR";
+        }
+    }
+
     public static List<ProductoData> obtenerDatos() throws Exception, InterruptedException, IOException {
 
         MercadoLibreAPI.inicializar();
@@ -388,9 +535,18 @@ public class ScrapperService extends Service<Void> {
                                     // Buscar el atributo SELLER_SKU en attributes
                                     String sku = extraerSkuDeVariacion(variacionNode);
                                     if (sku != null && !sku.isEmpty()) {
-                                        AppLogger.info("ML - Variación " + userProductId + " - SKU: " + sku);
+                                        // Obtener cantidad de imágenes de picture_ids de la variación
+                                        JsonNode pictureIdsNode = variation.path("picture_ids");
+                                        int cantidadImagenes = 0;
+                                        if (pictureIdsNode.isArray()) {
+                                            cantidadImagenes = pictureIdsNode.size();
+                                        }
+
+                                        AppLogger.info("ML - Variación " + userProductId + " - SKU: " + sku
+                                                + " - Imágenes: " + cantidadImagenes);
                                         // Agregar la variación como ProductoData
-                                        productoList.add(new ProductoData(producto, userProductId, sku));
+                                        productoList
+                                                .add(new ProductoData(producto, userProductId, sku, cantidadImagenes));
                                     }
                                 }
                             }
@@ -421,14 +577,19 @@ public class ScrapperService extends Service<Void> {
                     JsonNode idNode = attribute.path("id");
                     String id = idNode.isNull() ? "" : idNode.asString();
                     if ("SELLER_SKU".equals(id)) {
-                        JsonNode nameNode = attribute.path("name");
-                        String name = nameNode.isNull() ? "" : nameNode.asString();
-                        if (name != null && name.length() >= 7) {
-                            // Obtener los primeros 7 dígitos
-                            String primeros7Digitos = name.substring(0, 7);
-                            // Verificar que sean dígitos
-                            if (primeros7Digitos.matches("\\d{7}")) {
-                                return primeros7Digitos;
+                        // El SKU está en values[0].name, no en attribute.name
+                        JsonNode values = attribute.path("values");
+                        if (values.isArray() && values.size() > 0) {
+                            JsonNode firstValue = values.get(0);
+                            JsonNode nameNode = firstValue.path("name");
+                            String name = nameNode.isNull() ? "" : nameNode.asString();
+                            if (name != null && name.length() >= 7) {
+                                // Obtener los primeros 7 dígitos
+                                String primeros7Digitos = name.substring(0, 7);
+                                // Verificar que sean dígitos
+                                if (primeros7Digitos.matches("\\d{7}")) {
+                                    return primeros7Digitos;
+                                }
                             }
                         }
                     }
@@ -679,8 +840,8 @@ public class ScrapperService extends Service<Void> {
 
             // Verificar si ya existen las columnas, si no, agregarlas
             Row header = scanSheet.getRow(0);
-            int colImagenesCarpeta = 7; // Columnas conocidas (ya están definidas arriba)
-            int colVideosCarpeta = 8;
+            int colImagenesCarpeta = 9; // Columnas conocidas (después de SCORE y NIVEL)
+            int colVideosCarpeta = 10;
 
             // Aplicar estilo al header (reutilizando el estilo ya creado)
             aplicarStyleFila(header, headerStyle);
@@ -689,8 +850,9 @@ public class ScrapperService extends Service<Void> {
             int colSku = 4; // Columna SKU
             int colImagenes = 2; // Columna IMAGENES (cantidad en ML)
             int colVideos = 3; // Columna VIDEOS (SI/NO)
-            int colConclusionImagenes = 9; // Columna CONCLUSION IMAGENES
-            int colConclusionVideos = 10; // Columna CONCLUSION VIDEOS
+            int colConclusionImagenes = 11; // Columna CONCLUSION IMAGENES
+            int colConclusionVideos = 12; // Columna CONCLUSION VIDEOS
+            int colCorregir = 13; // Columna CORREGIR (última)
             int totalFilas = scanSheet.getLastRowNum() + 1;
             AppLogger.info("Procesando " + totalFilas + " productos en carpetas...");
 
@@ -777,8 +939,9 @@ public class ScrapperService extends Service<Void> {
             scanSheet.autoSizeColumn(colVideosCarpeta);
             scanSheet.autoSizeColumn(colConclusionImagenes);
             scanSheet.autoSizeColumn(colConclusionVideos);
+            scanSheet.autoSizeColumn(colCorregir);
             // Re-ajustar todas las columnas al final para asegurar que todo esté bien
-            for (int i = 0; i <= 10; i++) {
+            for (int i = 0; i <= 13; i++) {
                 scanSheet.autoSizeColumn(i);
             }
 

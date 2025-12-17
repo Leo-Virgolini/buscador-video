@@ -42,16 +42,20 @@ public class MercadoLibreAPI {
         MercadoLibreAPI.inicializar();
         // String userId = MercadoLibreAPI.getUserId();
 
-        JsonNode itemNode = MercadoLibreAPI.getItemNodeByMLA("MLA1435717113");
-        System.out.println(itemNode.toPrettyString());
+        // JsonNode itemNode = MercadoLibreAPI.getItemNodeByMLA("MLA1393972589");
+        // System.out.println(itemNode.toPrettyString());
 
-        // JsonNode variations = MercadoLibreAPI.obtenerVariaciones("MLA1435717113");
+        // JsonNode variations = MercadoLibreAPI.obtenerVariaciones("MLA763977102");
         // System.out.println(variations.toPrettyString());
 
-        // JsonNode itemNodeU = MercadoLibreAPI.getItemNodeByMLAU("MLAU398170646");
+        // JsonNode itemNodeU = MercadoLibreAPI.getItemNodeByMLAU("MLAU161829497");
         // System.out.println(itemNodeU.toPrettyString());
 
-        // JsonNode performance = MercadoLibreAPI.getItemPerformance("MLA1100122612");
+        // JsonNode performance =
+        // MercadoLibreAPI.getItemPerformanceByMLA("MLA763977102");
+        // System.out.println(performance.toPrettyString());
+
+        // JsonNode performance = MercadoLibreAPI.getItemPerformanceByMLAU("MLAU158800625");
         // System.out.println(performance.toPrettyString());
     }
 
@@ -237,7 +241,7 @@ public class MercadoLibreAPI {
      * @param itemId ID del item (MLA) de MercadoLibre
      * @return JsonNode con los datos de performance, o null si hay error
      */
-    public static JsonNode getItemPerformance(String itemId) {
+    public static JsonNode getItemPerformanceByMLA(String itemId) {
         MercadoLibreAPI.verificarTokens();
         final String url = "https://api.mercadolibre.com/item/" + itemId + "/performance";
 
@@ -251,6 +255,32 @@ public class MercadoLibreAPI {
 
         if (response.statusCode() != 200) {
             logger.warn("ML - Error al obtener performance del item " + itemId + ": " + response.body());
+            return null;
+        }
+
+        return mapper.readTree(response.body());
+    }
+
+    /**
+     * Obtiene la calidad/performance de una publicación de MercadoLibre.
+     * 
+     * @param ID del item (MLAU) de MercadoLibre
+     * @return JsonNode con los datos de performance, o null si hay error
+     */
+    public static JsonNode getItemPerformanceByMLAU(String mlau) {
+        MercadoLibreAPI.verificarTokens();
+        final String url = "https://api.mercadolibre.com/user-product/" + mlau + "/performance";
+
+        final Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response.statusCode() != 200) {
+            logger.warn("ML - Error al obtener performance del item " + mlau + ": " + response.body());
             return null;
         }
 
