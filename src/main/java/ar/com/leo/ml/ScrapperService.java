@@ -20,7 +20,6 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class ScrapperService extends Service<Void> {
@@ -81,7 +80,8 @@ public class ScrapperService extends Service<Void> {
 
     public void run() throws Exception {
         // Verificar que el archivo no esté en uso
-        try (RandomAccessFile raf = new RandomAccessFile(excelFile, "rw")) {
+        try (@SuppressWarnings("unused")
+        RandomAccessFile raf = new RandomAccessFile(excelFile, "rw")) {
             // Si se puede abrir, está disponible
         } catch (Exception ex) {
             throw new IllegalStateException("El excel está en uso. Cerralo antes de continuar.");
@@ -207,9 +207,12 @@ public class ScrapperService extends Service<Void> {
                 row.createCell(4).setCellValue(p.sku);
                 row.createCell(5).setCellValue(p.permalink);
                 row.createCell(6).setCellValue(p.tipoPublicacion);
-                // Las columnas IMAGENES EN CARPETA, VIDEOS EN CARPETA, CONCLUSION IMAGENES y
-                // CONCLUSION VIDEOS
-                // se llenarán más adelante en actualizarExcelConArchivos
+                // Crear celdas vacías para las columnas que se llenarán más adelante
+                // para mantener la alineación correcta
+                row.createCell(7).setCellValue(""); // IMAGENES EN CARPETA
+                row.createCell(8).setCellValue(""); // VIDEOS EN CARPETA
+                row.createCell(9).setCellValue(""); // CONCLUSION IMAGENES
+                row.createCell(10).setCellValue(""); // CONCLUSION VIDEOS
 
                 // SCORE: si es null, dejar celda vacía, si no, poner el número
                 Cell cellScore = row.createCell(11);
@@ -750,11 +753,10 @@ public class ScrapperService extends Service<Void> {
     private static void actualizarExcelConArchivos(Workbook workbook, Sheet scanSheet, String carpetaImagenes,
             String carpetaVideos, CellStyle headerStyle, CellStyle centeredStyle) {
         try {
-
             // Verificar si ya existen las columnas, si no, agregarlas
             Row header = scanSheet.getRow(0);
-            int colImagenesCarpeta = 9; // Columnas conocidas (después de SCORE y NIVEL)
-            int colVideosCarpeta = 10;
+            int colImagenesCarpeta = 7; // Columna IMAGENES EN CARPETA
+            int colVideosCarpeta = 8; // Columna VIDEOS EN CARPETA
 
             // Aplicar estilo al header (reutilizando el estilo ya creado)
             aplicarStyleFila(header, headerStyle);
@@ -763,8 +765,8 @@ public class ScrapperService extends Service<Void> {
             int colSku = 4; // Columna SKU
             int colImagenes = 2; // Columna IMAGENES (cantidad en ML)
             int colVideos = 3; // Columna VIDEOS (SI/NO)
-            int colConclusionImagenes = 11; // Columna CONCLUSION IMAGENES
-            int colConclusionVideos = 12; // Columna CONCLUSION VIDEOS
+            int colConclusionImagenes = 9; // Columna CONCLUSION IMAGENES
+            int colConclusionVideos = 10; // Columna CONCLUSION VIDEOS
             int colCorregir = 13; // Columna CORREGIR (última)
             int totalFilas = scanSheet.getLastRowNum() + 1;
             AppLogger.info("Procesando " + totalFilas + " productos en carpetas...");
@@ -991,89 +993,6 @@ public class ScrapperService extends Service<Void> {
         }
     }
 
-    private static int contarVideosPorSku(String carpetaVideos, String sku) {
-        if (sku == null || sku.isEmpty() || carpetaVideos == null || carpetaVideos.isEmpty()) {
-            return 0;
-        }
-
-        try {
-            // Normalizar la ruta para manejar rutas UNC (\\server\share) y rutas
-            // relativas/absolutas
-            Path carpetaPath = Paths.get(carpetaVideos).normalize();
-
-            // Verificar existencia y tipo (funciona con rutas locales y de red)
-            if (!Files.exists(carpetaPath)) {
-                AppLogger.warn("La carpeta de videos no existe: " + carpetaPath);
-                return 0;
-            }
-
-            if (!Files.isDirectory(carpetaPath)) {
-                AppLogger.warn("La ruta de videos no es un directorio: " + carpetaPath);
-                return 0;
-            }
-
-            // Verificar permisos de lectura (importante para rutas de red)
-            if (!Files.isReadable(carpetaPath)) {
-                AppLogger.warn("No se tienen permisos de lectura en la carpeta de videos: " + carpetaPath);
-                return 0;
-            }
-
-            int contador = 0;
-            String skuUpper = sku.toUpperCase();
-
-            // Buscar carpetas que coincidan con el SKU (primeros 7 caracteres)
-            // Las operaciones de I/O aquí pueden lanzar AccessDeniedException y
-            // FileSystemException
-            try (Stream<Path> carpetas = Files.list(carpetaPath)) {
-                List<Path> carpetasSku = carpetas
-                        .filter(Files::isDirectory)
-                        .filter(carpeta -> {
-                            String nombreCarpeta = carpeta.getFileName().toString().toUpperCase();
-                            // Extraer los primeros 7 caracteres del nombre de la carpeta
-                            if (nombreCarpeta.length() < 7) {
-                                return false;
-                            }
-                            String primeros7Caracteres = nombreCarpeta.substring(0, 7);
-                            // Comparar con el SKU
-                            return primeros7Caracteres.equals(skuUpper);
-                        })
-                        .collect(Collectors.toList());
-
-                // Dentro de cada carpeta encontrada, contar los archivos de video
-                for (Path carpetaSku : carpetasSku) {
-                    try (Stream<Path> archivos = Files.list(carpetaSku)) {
-                        long videosEnCarpeta = archivos
-                                .filter(Files::isRegularFile)
-                                .filter(archivo -> {
-                                    String nombreArchivo = archivo.getFileName().toString().toUpperCase();
-                                    // Usar Set para búsqueda más rápida
-                                    String extension = nombreArchivo
-                                            .substring(Math.max(0, nombreArchivo.lastIndexOf('.')));
-                                    return VIDEO_EXTENSIONS_SET.contains(extension.toLowerCase());
-                                })
-                                .count();
-                        contador += (int) videosEnCarpeta;
-                    }
-                }
-            }
-
-            return contador;
-
-        } catch (AccessDeniedException e) {
-            AppLogger.warn("Acceso denegado a la carpeta de videos: " + carpetaVideos + " - " + e.getMessage());
-            return 0;
-        } catch (FileSystemException e) {
-            // Errores comunes con rutas de red: conexión perdida, servidor no disponible,
-            // etc.
-            AppLogger.warn("Error del sistema de archivos al acceder a la carpeta de videos: " + carpetaVideos + " - "
-                    + e.getMessage());
-            return 0;
-        } catch (IOException e) {
-            AppLogger.warn("Error de I/O al buscar videos en carpeta " + carpetaVideos + ": " + e.getMessage());
-            return 0;
-        }
-    }
-
     /**
      * Indexa todos los archivos por SKU en un Map para búsquedas rápidas.
      * Recorre la carpeta una sola vez en lugar de hacerlo por cada SKU.
@@ -1163,9 +1082,12 @@ public class ScrapperService extends Service<Void> {
                                             .filter(Files::isRegularFile)
                                             .filter(archivo -> {
                                                 String nombreArchivo = archivo.getFileName().toString().toUpperCase();
-                                                String extension = nombreArchivo
-                                                        .substring(Math.max(0, nombreArchivo.lastIndexOf('.')));
-                                                return VIDEO_EXTENSIONS_SET.contains(extension.toLowerCase());
+                                                int lastDot = nombreArchivo.lastIndexOf('.');
+                                                if (lastDot == -1 || lastDot == nombreArchivo.length() - 1) {
+                                                    return false; // No tiene extensión válida
+                                                }
+                                                String extension = nombreArchivo.substring(lastDot).toLowerCase();
+                                                return VIDEO_EXTENSIONS_SET.contains(extension);
                                             })
                                             .count();
 
@@ -1183,88 +1105,6 @@ public class ScrapperService extends Service<Void> {
         }
 
         return index;
-    }
-
-    private static int contarArchivosPorSku(String carpeta, String sku, Set<String> extensionesSet) {
-        if (sku == null || sku.isEmpty() || carpeta == null || carpeta.isEmpty()) {
-            return 0;
-        }
-
-        try {
-            // Normalizar la ruta para manejar rutas UNC (\\server\share) y rutas
-            // relativas/absolutas
-            Path carpetaPath = Paths.get(carpeta).normalize();
-
-            // Verificar existencia y tipo (funciona con rutas locales y de red)
-            if (!Files.exists(carpetaPath)) {
-                AppLogger.warn("La carpeta no existe: " + carpetaPath);
-                return 0;
-            }
-
-            if (!Files.isDirectory(carpetaPath)) {
-                AppLogger.warn("La ruta no es un directorio: " + carpetaPath);
-                return 0;
-            }
-
-            // Verificar permisos de lectura (importante para rutas de red)
-            if (!Files.isReadable(carpetaPath)) {
-                AppLogger.warn("No se tienen permisos de lectura en la carpeta: " + carpetaPath);
-                return 0;
-            }
-
-            int contador = 0;
-            String skuUpper = sku.toUpperCase();
-
-            // Las operaciones de I/O aquí pueden lanzar AccessDeniedException y
-            // FileSystemException
-            try (Stream<Path> paths = Files.walk(carpetaPath)) {
-                contador = (int) paths
-                        .filter(Files::isRegularFile)
-                        .filter(path -> {
-                            String nombreArchivoCompleto = path.getFileName().toString().toUpperCase();
-
-                            // Verificar extensión primero usando Set para búsqueda más rápida
-                            int lastDot = nombreArchivoCompleto.lastIndexOf('.');
-                            if (lastDot == -1 || lastDot == nombreArchivoCompleto.length() - 1) {
-                                return false; // Sin extensión válida
-                            }
-
-                            String extension = nombreArchivoCompleto.substring(lastDot).toLowerCase();
-                            if (!extensionesSet.contains(extension)) {
-                                return false; // Extensión no válida
-                            }
-
-                            // Remover la extensión para obtener solo el nombre
-                            String nombreSinExtension = nombreArchivoCompleto.substring(0, lastDot);
-
-                            // Extraer los primeros 7 caracteres del nombre del archivo (sin extensión)
-                            if (nombreSinExtension.length() < 7) {
-                                return false;
-                            }
-
-                            String primeros7Caracteres = nombreSinExtension.substring(0, 7);
-
-                            // Comparar con el SKU
-                            return primeros7Caracteres.equals(skuUpper);
-                        })
-                        .count();
-            }
-
-            return contador;
-
-        } catch (AccessDeniedException e) {
-            AppLogger.warn("Acceso denegado a la carpeta: " + carpeta + " - " + e.getMessage());
-            return 0;
-        } catch (FileSystemException e) {
-            // Errores comunes con rutas de red: conexión perdida, servidor no disponible,
-            // etc.
-            AppLogger
-                    .warn("Error del sistema de archivos al acceder a la carpeta: " + carpeta + " - " + e.getMessage());
-            return 0;
-        } catch (IOException e) {
-            AppLogger.warn("Error de I/O al buscar archivos en carpeta " + carpeta + ": " + e.getMessage());
-            return 0;
-        }
     }
 
 }
