@@ -66,19 +66,19 @@ public class AppLogger {
 
     public static void warn(String message) {
         logger.warn(message);
-        ui("⚠️ " + message);
+        ui(message);
     }
 
     public static void error(String message, Throwable t) {
         logger.error(message, t);
-        ui("❌ " + message);
+        ui(message);
     }
 
     private static void ui(String message) {
         if (message == null || message.isEmpty()) {
             return;
         }
-        
+
         // Agregar mensaje a la cola (thread-safe)
         try {
             messageQueue.put(message);

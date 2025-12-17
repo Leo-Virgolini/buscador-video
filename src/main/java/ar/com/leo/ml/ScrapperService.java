@@ -201,12 +201,12 @@ public class ScrapperService extends Service<Void> {
                 header.createCell(4).setCellValue("SKU");
                 header.createCell(5).setCellValue("URL");
                 header.createCell(6).setCellValue("TIPO PUBLICACION");
-                header.createCell(7).setCellValue("SCORE");
-                header.createCell(8).setCellValue("NIVEL");
-                header.createCell(9).setCellValue("IMAGENES EN CARPETA");
-                header.createCell(10).setCellValue("VIDEOS EN CARPETA");
-                header.createCell(11).setCellValue("CONCLUSION IMAGENES");
-                header.createCell(12).setCellValue("CONCLUSION VIDEOS");
+                header.createCell(7).setCellValue("IMAGENES EN CARPETA");
+                header.createCell(8).setCellValue("VIDEOS EN CARPETA");
+                header.createCell(9).setCellValue("CONCLUSION IMAGENES");
+                header.createCell(10).setCellValue("CONCLUSION VIDEOS");
+                header.createCell(11).setCellValue("SCORE");
+                header.createCell(12).setCellValue("NIVEL");
                 header.createCell(13).setCellValue("CORREGIR");
 
                 aplicarStyleFila(header, headerStyle);
@@ -230,18 +230,32 @@ public class ScrapperService extends Service<Void> {
                     row.createCell(4).setCellValue(p.sku);
                     row.createCell(5).setCellValue(p.permalink);
                     row.createCell(6).setCellValue(p.tipoPublicacion);
+                    // Las columnas IMAGENES EN CARPETA, VIDEOS EN CARPETA, CONCLUSION IMAGENES y
+                    // CONCLUSION VIDEOS
+                    // se llenarán más adelante en actualizarExcelConArchivos
+
                     // SCORE: si es null, dejar celda vacía, si no, poner el número
+                    Cell cellScore = row.createCell(11);
                     if (p.score != null) {
-                        row.createCell(7).setCellValue(p.score);
+                        cellScore.setCellValue(p.score);
                     } else {
-                        row.createCell(7).setCellValue("");
+                        cellScore.setCellValue("");
                     }
+                    // Aplicar estilo según el nivel
+                    cellScore.setCellStyle(obtenerEstiloPorNivel(workbook, p.nivel));
+
                     // NIVEL: si es null, dejar celda vacía
-                    row.createCell(8).setCellValue(p.nivel != null ? p.nivel : "");
+                    Cell cellNivel = row.createCell(12);
+                    cellNivel.setCellValue(p.nivel != null ? p.nivel : "");
+                    // Aplicar estilo según el nivel
+                    cellNivel.setCellStyle(obtenerEstiloPorNivel(workbook, p.nivel));
+
                     // CORREGIR: títulos de keys con status PENDING (última columna)
                     row.createCell(13).setCellValue(p.corregir != null ? p.corregir : "");
 
-                    aplicarStyleFila(row, centeredStyle);
+                    // Aplicar estilo a todas las celdas excepto SCORE y NIVEL (que ya tienen su
+                    // estilo)
+                    aplicarStyleFilaExcluyendo(row, centeredStyle, 11, 12);
                 }
 
                 // ==========================
@@ -779,6 +793,43 @@ public class ScrapperService extends Service<Void> {
     // Caché de estilos para evitar crear estilos duplicados
     private static final Map<String, CellStyle> estiloCache = new HashMap<>();
 
+    /**
+     * Obtiene el estilo de celda según el nivel del producto.
+     * Profesional → verde, Estándar → amarillo, Básica → rojo
+     */
+    private static CellStyle obtenerEstiloPorNivel(Workbook workbook, String nivel) {
+        if (nivel == null || nivel.isEmpty()) {
+            return obtenerEstiloCached(workbook, "DEFAULT", () -> crearCenteredStyle(workbook));
+        }
+
+        String nivelUpper = nivel.toUpperCase();
+        String cacheKey;
+        CellStyle style;
+
+        if (nivelUpper.contains("PROFESIONAL")) {
+            // Verde para Profesional
+            cacheKey = "NIVEL_PROFESIONAL";
+            style = obtenerEstiloCached(workbook, cacheKey,
+                    () -> crearCenteredStyleWithColor(workbook, IndexedColors.LIGHT_GREEN));
+        } else if (nivelUpper.contains("ESTÁNDAR") || nivelUpper.contains("ESTANDAR")) {
+            // Amarillo para Estándar
+            cacheKey = "NIVEL_ESTANDAR";
+            style = obtenerEstiloCached(workbook, cacheKey,
+                    () -> crearCenteredStyleWithColor(workbook, IndexedColors.LIGHT_YELLOW));
+        } else if (nivelUpper.contains("BÁSICA") || nivelUpper.contains("BASICA")) {
+            // Rojo para Básica
+            cacheKey = "NIVEL_BASICA";
+            style = obtenerEstiloCached(workbook, cacheKey,
+                    () -> crearCenteredStyleWithColor(workbook, IndexedColors.ROSE));
+        } else {
+            // Estilo normal para otros casos
+            cacheKey = "DEFAULT";
+            style = obtenerEstiloCached(workbook, cacheKey, () -> crearCenteredStyle(workbook));
+        }
+
+        return style;
+    }
+
     private static CellStyle obtenerEstiloConclusion(Workbook workbook, String conclusion) {
         if (conclusion == null) {
             return obtenerEstiloCached(workbook, "DEFAULT", () -> crearCenteredStyle(workbook));
@@ -829,6 +880,23 @@ public class ScrapperService extends Service<Void> {
     private static void aplicarStyleFila(Row row, CellStyle style) {
         for (int i = 0; i < row.getLastCellNum(); i++) {
             if (row.getCell(i) != null) {
+                row.getCell(i).setCellStyle(style);
+            }
+        }
+    }
+
+    /**
+     * Aplica estilo a todas las celdas de una fila excepto las columnas
+     * especificadas
+     */
+    private static void aplicarStyleFilaExcluyendo(Row row, CellStyle style, int... columnasExcluidas) {
+        Set<Integer> excluidas = new HashSet<>();
+        for (int col : columnasExcluidas) {
+            excluidas.add(col);
+        }
+
+        for (int i = 0; i < row.getLastCellNum(); i++) {
+            if (!excluidas.contains(i) && row.getCell(i) != null) {
                 row.getCell(i).setCellStyle(style);
             }
         }
