@@ -38,9 +38,9 @@ public class MercadoLibreAPI {
     private static MLCredentials mlCredentials;
     private static TokensML tokens;
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, InterruptedException {
         MercadoLibreAPI.inicializar();
-        // String userId = MercadoLibreAPI.getUserId();
+        String userId = MercadoLibreAPI.getUserId();
 
         // JsonNode itemNode = MercadoLibreAPI.getItemNodeByMLA("MLA833704228"); // "catalog_product_id" : "MLA47481143" "user_product_id" : "MLAU3108972068"  item_relations."id" : "MLA2044371194"
         // System.out.println(itemNode.toPrettyString());
@@ -51,11 +51,25 @@ public class MercadoLibreAPI {
         // JsonNode itemNodeU = MercadoLibreAPI.getItemNodeByMLAU("MLAU2923718381");
         // System.out.println(itemNodeU.toPrettyString());
 
-        // JsonNode performance = MercadoLibreAPI.getItemPerformanceByMLA("MLA1504709583");
+        // JsonNode performance = MercadoLibreAPI.getItemPerformanceByMLA("MLA2306667754");
         // System.out.println(performance.toPrettyString());
 
         // JsonNode performance = MercadoLibreAPI.getItemPerformanceByMLAU("MLAU3011744069");
         // System.out.println(performance.toPrettyString());
+
+        // JsonNode sellerQualityStatus = MercadoLibreAPI.getSellerQualityStatus(userId);
+        // System.out.println(sellerQualityStatus.toPrettyString());
+
+        // JsonNode productQualityStatus = MercadoLibreAPI.getProductQualityStatus("321654987");
+        // System.out.println(productQualityStatus.toPrettyString());
+
+        // List<JsonNode> penalizedItems = MercadoLibreAPI.getPenalizedItems(userId);
+        // if (penalizedItems != null) {
+        //     System.out.println("Total de páginas: " + penalizedItems.size());
+        //     for (JsonNode page : penalizedItems) {
+        //         System.out.println(page.toPrettyString());
+        //     }
+        // }
     }
 
     public static String getUserId() throws IOException {
@@ -157,10 +171,6 @@ public class MercadoLibreAPI {
             if (results.isEmpty()) {
                 continuar = false;
             }
-
-            // Pausa corta para evitar rate limit
-            // Thread.sleep(200);
-
         } while (continuar);
 
         return items;
@@ -274,6 +284,109 @@ public class MercadoLibreAPI {
         }
 
         return mapper.readTree(response.body());
+    }
+
+    public static JsonNode getSellerQualityStatus(String sellerId) {
+        MercadoLibreAPI.verificarTokens();
+        final String url =
+                "https://api.mercadolibre.com/catalog_quality/status?seller_id=" + sellerId
+                        + "&include_items=true&v=3";
+
+        final Supplier<HttpRequest> requestBuilder =
+                () -> HttpRequest.newBuilder().uri(URI.create(url))
+                        .header("Authorization", "Bearer " + tokens.accessToken).GET().build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response.statusCode() != 200) {
+            logger.warn("ML - Error al obtener quality status del seller " + sellerId + ": "
+                    + response.body());
+            return null;
+        }
+
+        return mapper.readTree(response.body());
+    }
+
+
+    public static JsonNode getProductQualityStatus(String itemId) {
+        MercadoLibreAPI.verificarTokens();
+        final String url =
+                "https://api.mercadolibre.com/catalog_quality/status?item_id=" + itemId + "&v=3";
+
+        final Supplier<HttpRequest> requestBuilder =
+                () -> HttpRequest.newBuilder().uri(URI.create(url))
+                        .header("Authorization", "Bearer " + tokens.accessToken).GET().build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response.statusCode() != 200) {
+            logger.warn("ML - Error al obtener quality status del item " + itemId + ": "
+                    + response.body());
+            return null;
+        }
+
+        return mapper.readTree(response.body());
+    }
+
+    public static List<JsonNode> getPenalizedItems(String sellerId) throws InterruptedException {
+        MercadoLibreAPI.verificarTokens();
+        final List<JsonNode> allPages = new ArrayList<>();
+        int offset = 0;
+        int limit = 50; // Valor por defecto, puede venir en la respuesta
+        int total = 0;
+        boolean continuar = true;
+
+        do {
+            // Construir URL con paginación
+            String url = String.format(
+                    "https://api.mercadolibre.com/users/%s/items/search?tags=incomplete_technical_specs&offset=%d&limit=%d",
+                    sellerId, offset, limit);
+
+            final String finalUrl = url;
+            Supplier<HttpRequest> requestBuilder =
+                    () -> HttpRequest.newBuilder().uri(URI.create(finalUrl))
+                            .header("Authorization", "Bearer " + tokens.accessToken).GET().build();
+
+            HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+            if (response.statusCode() != 200) {
+                logger.warn("ML - Error al obtener penalized items del seller " + sellerId + ": "
+                        + response.body());
+                return null;
+            }
+
+            JsonNode root = mapper.readTree(response.body());
+
+            // Agregar la página completa a la lista
+            allPages.add(root);
+
+            JsonNode results = root.path("results");
+
+            // Obtener información de paginación
+            JsonNode pagingNode = root.path("paging");
+            if (!pagingNode.isNull()) {
+                JsonNode totalNode = pagingNode.path("total");
+                if (!totalNode.isNull() && totalNode.isNumber()) {
+                    total = totalNode.asInt();
+                }
+
+                JsonNode limitNode = pagingNode.path("limit");
+                if (!limitNode.isNull() && limitNode.isNumber()) {
+                    limit = limitNode.asInt();
+                }
+            }
+
+            // Incrementar offset para la siguiente página
+            offset += limit;
+
+            // Si ya no hay más resultados o alcanzamos el total, detener
+            if (results.isEmpty() || offset >= total) {
+                continuar = false;
+            }
+
+        } while (continuar);
+
+        return allPages;
     }
 
     // TOKENS

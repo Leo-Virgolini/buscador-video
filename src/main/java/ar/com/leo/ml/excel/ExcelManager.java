@@ -57,11 +57,10 @@ public class ExcelManager {
         try (FileInputStream fis = new FileInputStream(excelFile)) {
             Workbook workbook = new XSSFWorkbook(fis);
 
-            // Verificar que tenga al menos 2 hojas
-            if (workbook.getNumberOfSheets() < 2) {
+            // Verificar que el workbook sea válido (debe tener al menos 1 hoja)
+            if (workbook.getNumberOfSheets() < 1) {
                 workbook.close();
-                throw new IllegalArgumentException("El archivo Excel debe tener al menos 2 hojas. " +
-                        "Hojas encontradas: " + workbook.getNumberOfSheets());
+                throw new IllegalArgumentException("El archivo Excel no tiene hojas válidas.");
             }
 
             // El workbook ahora tiene el contenido en memoria, el stream se cerrará automáticamente
@@ -70,10 +69,17 @@ public class ExcelManager {
     }
 
     /**
-     * Obtiene la hoja de escaneo (segunda hoja, índice 1).
+     * Obtiene la hoja de escaneo llamada "SCAN".
+     * Si no existe, la crea.
      */
     public static Sheet obtenerHojaEscaneo(Workbook workbook) {
-        return workbook.getSheetAt(1); // 2da hoja
+        Sheet sheet = workbook.getSheet("SCAN");
+        if (sheet == null) {
+            // Si no existe la hoja "SCAN", crearla
+            AppLogger.info("La hoja 'SCAN' no existe, creándola...");
+            sheet = workbook.createSheet("SCAN");
+        }
+        return sheet;
     }
 
     /**

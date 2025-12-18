@@ -256,8 +256,7 @@ public class ProductReportService extends Service<Void> {
                 productoData.nivel = levelWordingNode.asString();
             }
 
-            // Extraer títulos de variables con status PENDING (solo de variables, no de
-            // buckets)
+            // Extraer títulos de wordings.title de rules dentro de variables con status PENDING
             List<String> titulosPendientes = new ArrayList<>();
             JsonNode buckets = performance.path("buckets");
             if (buckets.isArray()) {
@@ -270,11 +269,25 @@ public class ProductReportService extends Service<Void> {
                             String variableStatus = variableStatusNode.isNull() ? ""
                                     : variableStatusNode.asString();
                             if ("PENDING".equals(variableStatus)) {
-                                JsonNode variableTitleNode = variable.path("title");
-                                if (!variableTitleNode.isNull()) {
-                                    String variableTitle = variableTitleNode.asString("");
-                                    if (variableTitle != null && !variableTitle.isEmpty()) {
-                                        titulosPendientes.add(variableTitle);
+                                // Buscar en las rules de la variable
+                                JsonNode rules = variable.path("rules");
+                                if (rules.isArray()) {
+                                    for (JsonNode rule : rules) {
+                                        // Extraer el title de wordings.title
+                                        JsonNode wordingsNode = rule.path("wordings");
+                                        if (!wordingsNode.isNull() && wordingsNode.isObject()) {
+                                            JsonNode wordingTitleNode = wordingsNode.path("title");
+                                            if (!wordingTitleNode.isNull()) {
+                                                String wordingTitle = wordingTitleNode.asString("");
+                                                if (wordingTitle != null
+                                                        && !wordingTitle.isEmpty()) {
+                                                    // Evitar duplicados
+                                                    if (!titulosPendientes.contains(wordingTitle)) {
+                                                        titulosPendientes.add(wordingTitle);
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
