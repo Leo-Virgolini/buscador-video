@@ -26,6 +26,11 @@ public class VentanaController implements Initializable {
     private TextField ubicacionCarpetaVideos;
 
     @FXML
+    private TextArea cookiesTextArea;
+    @FXML
+    private TextField requestsPorSegundo;
+
+    @FXML
     private TextArea logTextArea;
     @FXML
     private ProgressIndicator progressIndicator;
@@ -69,6 +74,14 @@ public class VentanaController implements Initializable {
         } else {
             carpetaVideos = null;
         }
+
+        String cookies = prefs.get("cookies", "");
+        if (!cookies.isBlank()) {
+            cookiesTextArea.setText(cookies);
+        }
+
+        String requestsPorSeg = prefs.get("requestsPorSegundo", "5");
+        requestsPorSegundo.setText(requestsPorSeg);
     }
 
     private void savePreferences() {
@@ -77,6 +90,8 @@ public class VentanaController implements Initializable {
         prefs.put("ubicacionExcel", ubicacionExcel.getText());
         prefs.put("ubicacionCarpetaImagenes", ubicacionCarpetaImagenes.getText());
         prefs.put("ubicacionCarpetaVideos", ubicacionCarpetaVideos.getText());
+        prefs.put("cookies", cookiesTextArea.getText());
+        prefs.put("requestsPorSegundo", requestsPorSegundo.getText());
     }
 
     @FXML
@@ -85,12 +100,14 @@ public class VentanaController implements Initializable {
 
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Elige archivo Excel de salida");
-        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Archivo XLSX", "*.xlsx"));
+        fileChooser.getExtensionFilters()
+                .add(new FileChooser.ExtensionFilter("Archivo XLSX", "*.xlsx"));
 
         // Obtener último archivo guardado y su carpeta padre
         File lastFile = new File(prefs.get("ubicacionExcel", ""));
-        File initialDir = (lastFile.exists() && lastFile.getParentFile() != null) ? lastFile.getParentFile()
-                : new File(System.getProperty("user.dir"));
+        File initialDir =
+                (lastFile.exists() && lastFile.getParentFile() != null) ? lastFile.getParentFile()
+                        : new File(System.getProperty("user.dir"));
 
         fileChooser.setInitialDirectory(initialDir);
 
@@ -119,7 +136,8 @@ public class VentanaController implements Initializable {
 
     @FXML
     public void buscarCarpetaVideos() {
-        File carpeta = seleccionarCarpeta("ubicacionCarpetaVideos", "Elige carpeta de videos/clips");
+        File carpeta =
+                seleccionarCarpeta("ubicacionCarpetaVideos", "Elige carpeta de videos/clips");
         if (carpeta != null) {
             carpetaVideos = carpeta;
             ubicacionCarpetaVideos.setText(carpeta.getAbsolutePath());
@@ -152,6 +170,22 @@ public class VentanaController implements Initializable {
         logTextArea.clear();
         logTextArea.setStyle("-fx-text-fill: firebrick;");
 
+        // Validar cookies
+        String cookies = cookiesTextArea.getText().trim();
+        if (cookies.isBlank()) {
+            logTextArea.appendText("❌ Error: Debes ingresar las cookies de MercadoLibre.\n\n");
+            logTextArea.appendText("Instrucciones para obtener las cookies:\n");
+            logTextArea.appendText("1. Abre el navegador -> Presiona F12\n");
+            logTextArea.appendText("2. Ve a Mercado Libre (debes estar logueado)\n");
+            logTextArea.appendText("3. Presiona la pestaña 'Network' o 'Red'\n");
+            logTextArea.appendText("4. Recarga la página o navega por el sitio\n");
+            logTextArea.appendText("5. Click en el primer resultado de la lista\n");
+            logTextArea.appendText("6. Ve a 'Headers' -> 'Request Headers'\n");
+            logTextArea.appendText("7. Busca 'Cookie' y copia TODO su valor\n");
+            logTextArea.appendText("8. Pega el valor completo en el campo de cookies\n");
+            return;
+        }
+
         // Validar Excel (requerido)
         if (excelFile == null || !excelFile.isFile()) {
             logTextArea.appendText("❌ Error: Debes seleccionar un archivo Excel válido.\n");
@@ -162,18 +196,30 @@ public class VentanaController implements Initializable {
         // Validar carpeta de imágenes (requerido)
         if (carpetaImagenes == null || !carpetaImagenes.isDirectory()) {
             logTextArea.appendText("❌ Error: Debes seleccionar una carpeta de imágenes válida.\n");
-            logTextArea.appendText("Haz click en 'Buscar Carpeta' junto a 'Carpeta de Imágenes'.\n");
+            logTextArea
+                    .appendText("Haz click en 'Buscar Carpeta' junto a 'Carpeta de Imágenes'.\n");
             return;
         }
 
         // Validar carpeta de videos (requerido)
         if (carpetaVideos == null || !carpetaVideos.isDirectory()) {
-            logTextArea.appendText("❌ Error: Debes seleccionar una carpeta de videos/clips válida.\n");
-            logTextArea.appendText("Haz click en 'Buscar Carpeta' junto a 'Carpeta de Videos/Clips'.\n");
+            logTextArea
+                    .appendText("❌ Error: Debes seleccionar una carpeta de videos/clips válida.\n");
+            logTextArea.appendText(
+                    "Haz click en 'Buscar Carpeta' junto a 'Carpeta de Videos/Clips'.\n");
             return;
         }
 
-        ProductReportService service = new ProductReportService(excelFile, carpetaImagenes, carpetaVideos);
+        // Validar requests por segundo
+        if (requestsPorSegundo.getText().trim().isBlank()) {
+            logTextArea
+                    .appendText("❌ Error: Debes ingresar la cantidad de requests por segundo.\n");
+            return;
+        }
+        double requestsPorSeg = Double.parseDouble(requestsPorSegundo.getText().trim());
+
+        ProductReportService service = new ProductReportService(excelFile, carpetaImagenes,
+                carpetaVideos, cookies, requestsPorSeg);
 
         service.messageProperty().addListener((obs, old, nuevo) -> {
             if (nuevo != null && !nuevo.isBlank()) {
@@ -185,13 +231,15 @@ public class VentanaController implements Initializable {
             buscarButton.setDisable(true);
             progressIndicator.setVisible(true);
             logTextArea.setStyle("-fx-text-fill: darkblue;");
-            String fechaHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
+            String fechaHora =
+                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
             AppLogger.info("[" + fechaHora + "] Iniciando proceso...");
         });
 
         service.setOnSucceeded(e -> {
             logTextArea.setStyle("-fx-text-fill: darkgreen;");
-            String fechaHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
+            String fechaHora =
+                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
             AppLogger.info("[" + fechaHora + "] Proceso finalizado exitosamente.");
             buscarButton.setDisable(false);
             progressIndicator.setVisible(false);
@@ -199,7 +247,8 @@ public class VentanaController implements Initializable {
 
         service.setOnFailed(e -> {
             logTextArea.setStyle("-fx-text-fill: firebrick;");
-            AppLogger.error("Error: " + service.getException().getLocalizedMessage(), service.getException());
+            AppLogger.error("Error: " + service.getException().getLocalizedMessage(),
+                    service.getException());
             buscarButton.setDisable(false);
             progressIndicator.setVisible(false);
         });

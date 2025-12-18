@@ -1,5 +1,6 @@
 package ar.com.leo.ml.excel;
 
+import ar.com.leo.AppLogger;
 import ar.com.leo.Util;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
@@ -14,7 +15,8 @@ public class ConclusionGenerator {
      * Genera la conclusión sobre las imágenes de un producto.
      * Compara la cantidad de imágenes en ML con las disponibles en la carpeta.
      */
-    public static String generarConclusionImagenes(Row row, int colImagenes, int colImagenesCarpeta) {
+    public static String generarConclusionImagenes(Row row, int colImagenes,
+            int colImagenesCarpeta) {
         try {
             // Leer cantidad de imágenes en ML (optimizado: leer directamente como número si es posible)
             int cantidadImagenesML = 0;
@@ -60,18 +62,23 @@ public class ConclusionGenerator {
                     if (cantidadImagenesCarpeta > cantidadImagenesML) {
                         // Hay más imágenes en carpeta que en ML (pueden que no estén subidas)
                         int imagenesACrear = 6 - cantidadImagenesCarpeta;
-                        return "CREAR " + imagenesACrear + " " + (imagenesACrear == 1 ? "imagen" : "imágenes");
+                        return "CREAR " + imagenesACrear + " "
+                                + (imagenesACrear == 1 ? "imagen" : "imágenes");
                     } else {
                         // No hay más imágenes en carpeta que en ML, solo crear las faltantes
-                        return "CREAR " + imagenesFaltantes + " " + (imagenesFaltantes == 1 ? "imagen" : "imágenes");
+                        return "CREAR " + imagenesFaltantes + " "
+                                + (imagenesFaltantes == 1 ? "imagen" : "imágenes");
                     }
                 } else if (cantidadImagenesCarpeta == 6) {
                     // Ya hay 6 en carpeta, solo subir las faltantes
-                    return "SUBIR " + imagenesFaltantes + " " + (imagenesFaltantes == 1 ? "imagen" : "imágenes");
+                    return "SUBIR " + imagenesFaltantes + " "
+                            + (imagenesFaltantes == 1 ? "imagen" : "imágenes");
                 } else {
                     // Hay más de 6 imágenes en carpeta
-                    return "SUBIR " + imagenesFaltantes + " " + (imagenesFaltantes == 1 ? "imagen" : "imágenes")
-                            + "  (se pueden subir hasta " + (cantidadImagenesCarpeta - cantidadImagenesML) + " más)";
+                    return "SUBIR " + imagenesFaltantes + " "
+                            + (imagenesFaltantes == 1 ? "imagen" : "imágenes")
+                            + "  (se pueden subir hasta "
+                            + (cantidadImagenesCarpeta - cantidadImagenesML) + " más)";
                 }
             }
 
@@ -79,6 +86,7 @@ public class ConclusionGenerator {
             return "OK";
 
         } catch (Exception e) {
+            AppLogger.warn("Error al generar conclusión de imágenes: " + e.getMessage());
             return "ERROR";
         }
     }
@@ -136,6 +144,7 @@ public class ConclusionGenerator {
             return "OK";
 
         } catch (Exception e) {
+            AppLogger.warn("Error al generar conclusión de videos: " + e.getMessage());
             return "ERROR";
         }
     }

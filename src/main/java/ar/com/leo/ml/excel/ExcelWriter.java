@@ -56,8 +56,8 @@ public class ExcelWriter {
     /**
      * Escribe los datos de los productos en la hoja de Excel.
      */
-    public static void escribirProductos(Sheet sheet, List<ProductoData> productoList, 
-                                         Workbook workbook, CellStyle centeredStyle) {
+    public static void escribirProductos(Sheet sheet, List<ProductoData> productoList,
+            Workbook workbook, CellStyle centeredStyle) {
         int rowNum = 1;
         for (ProductoData p : productoList) {
             Row row = sheet.createRow(rowNum++);
@@ -81,24 +81,24 @@ public class ExcelWriter {
             row.createCell(9).setCellValue(""); // CONCLUSION IMAGENES
             row.createCell(10).setCellValue(""); // CONCLUSION VIDEOS
 
-            // SCORE: si es null, dejar celda vacía, si no, poner el número
+            // SCORE: si es null, poner "N/A", si no, poner el número
             Cell cellScore = row.createCell(11);
             if (p.score != null) {
                 cellScore.setCellValue(p.score);
             } else {
-                cellScore.setCellValue("");
+                cellScore.setCellValue("N/A");
             }
             // Aplicar estilo según el nivel
             cellScore.setCellStyle(ExcelStyleManager.obtenerEstiloPorNivel(workbook, p.nivel));
 
-            // NIVEL: si es null, dejar celda vacía
+            // NIVEL: si es null, poner "N/A"
             Cell cellNivel = row.createCell(12);
-            cellNivel.setCellValue(p.nivel != null ? p.nivel : "");
+            cellNivel.setCellValue(p.nivel != null ? p.nivel : "N/A");
             // Aplicar estilo según el nivel
             cellNivel.setCellStyle(ExcelStyleManager.obtenerEstiloPorNivel(workbook, p.nivel));
 
-            // CORREGIR: títulos de keys con status PENDING (última columna)
-            row.createCell(13).setCellValue(p.corregir != null ? p.corregir : "");
+            // CORREGIR: títulos de keys con status PENDING (última columna), si es null poner "N/A"
+            row.createCell(13).setCellValue(p.corregir != null ? p.corregir : "N/A");
 
             // Aplicar estilo a todas las celdas excepto SCORE y NIVEL (que ya tienen su estilo)
             ExcelStyleManager.aplicarStyleFilaExcluyendo(row, centeredStyle, 11, 12);

@@ -15,14 +15,19 @@ import tools.jackson.databind.ObjectMapper;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-
+import com.google.common.util.concurrent.RateLimiter;
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -35,14 +40,26 @@ public class ProductReportService extends Service<Void> {
     private static final ExecutorService executor = Executors.newFixedThreadPool(POOL_SIZE);
     private static final ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
 
+    private static final int TIMEOUT_SECONDS = 15;
+    private static final String BUSQUEDA = "alt=\"clip-icon\"";
+    private static final HttpClient httpClient =
+            HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(TIMEOUT_SECONDS)).build();
+
     private final File excelFile;
     private final File carpetaImagenes;
     private final File carpetaVideos;
+    private final String cookieHeader;
+    private final double requestsPorSegundo;
+    private RateLimiter videoRateLimiter; // Rate limiter dinámico
 
-    public ProductReportService(File excelFile, File carpetaImagenes, File carpetaVideos) {
+    public ProductReportService(File excelFile, File carpetaImagenes, File carpetaVideos,
+            String cookieHeader, double requestsPorSegundo) {
         this.excelFile = excelFile;
         this.carpetaImagenes = carpetaImagenes;
         this.carpetaVideos = carpetaVideos;
+        this.cookieHeader = cookieHeader;
+        this.requestsPorSegundo = requestsPorSegundo;
+        this.videoRateLimiter = RateLimiter.create(requestsPorSegundo);
     }
 
     @Override
@@ -81,6 +98,13 @@ public class ProductReportService extends Service<Void> {
     }
 
     public void run() throws Exception {
+        // Validar cookies primero (antes de validar archivos/carpetas para fallar rápido)
+        if (!cookiesValidas(cookieHeader)) {
+            throw new IllegalArgumentException(
+                    "Cookies inválidas. Por favor verifica que estés logueado en MercadoLibre.");
+        }
+        AppLogger.info("Cookies válidas.");
+
         // Verificar que el archivo no esté en uso
         ExcelManager.verificarArchivoDisponible(excelFile);
 
@@ -142,8 +166,8 @@ public class ProductReportService extends Service<Void> {
 
             // Buscar archivos en carpetas y actualizar Excel
             AppLogger.info("Buscando archivos en carpetas...");
-            ExcelUpdater.actualizarExcelConArchivos(workbook, scanSheet, carpetaImagenesPath, carpetaVideosPath,
-                    headerStyle, centeredStyle);
+            ExcelUpdater.actualizarExcelConArchivos(workbook, scanSheet, carpetaImagenesPath,
+                    carpetaVideosPath, headerStyle, centeredStyle);
 
             // Ajustar ancho de columnas
             ExcelWriter.ajustarAnchoColumnas(scanSheet);
@@ -151,7 +175,8 @@ public class ProductReportService extends Service<Void> {
             // Guardar archivo
             ExcelManager.guardarWorkbook(workbook, excelFile);
 
-            String fechaHoraFin = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
+            String fechaHoraFin =
+                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
             AppLogger.info("[" + fechaHoraFin + "] Proceso finalizado exitosamente.");
         } finally {
             workbook.close();
@@ -172,12 +197,44 @@ public class ProductReportService extends Service<Void> {
      */
     private String obtenerDatosDePerformance(ProductoData productoData) {
         try {
+            // La API de performance solo funciona si el status del producto es "active"
+            // Si no está activo o es catálogo, usar scraping
+            boolean usarScraping = false;
+            String razon = "";
+
+            if (productoData.status == null || !"active".equalsIgnoreCase(productoData.status)) {
+                usarScraping = true;
+                razon = "no está activo (status: " + productoData.status + ")";
+            } else if (productoData.tipoPublicacion != null
+                    && "CATALOGO".equalsIgnoreCase(productoData.tipoPublicacion)) {
+                usarScraping = true;
+                razon = "es de tipo catálogo";
+            }
+
+            if (usarScraping) {
+                AppLogger.info("Producto " + productoData.mla + " " + razon
+                        + ", usando scraping para verificar video. No se obtendrán datos de performance.");
+                // Usar scraping para verificar video
+                // No se obtienen datos de performance (score, nivel, corregir) porque la API no funciona
+                // Establecer valores como "N/A" para indicar que no están disponibles
+                productoData.score = null; // Se mantiene null para que ExcelWriter lo maneje
+                productoData.nivel = "N/A";
+                productoData.corregir = "N/A";
+
+                if (productoData.permalink != null && !productoData.permalink.isEmpty()) {
+                    return verificarVideo(productoData.permalink, cookieHeader);
+                } else {
+                    AppLogger.warn("Producto " + productoData.mla
+                            + " no tiene permalink, no se puede verificar video por scraping");
+                    return "NO";
+                }
+            }
+
             // Obtener el ID del producto para el performance
             // Para productos normales: usar mlaParaPerformance (puede ser de item_relations
             // si es catálogo)
             // Para variaciones: usar el MLA del padre (mla)
-            String itemId = productoData.esVariacion
-                    ? productoData.mla // Para variaciones, usar el MLA del padre
+            String itemId = productoData.esVariacion ? productoData.mla // Para variaciones, usar el MLA del padre
                     : productoData.mlaParaPerformance;
 
             // Obtener performance del producto usando siempre getItemPerformanceByMLA
@@ -210,7 +267,8 @@ public class ProductReportService extends Service<Void> {
                     if (variables.isArray()) {
                         for (JsonNode variable : variables) {
                             JsonNode variableStatusNode = variable.path("status");
-                            String variableStatus = variableStatusNode.isNull() ? "" : variableStatusNode.asString();
+                            String variableStatus = variableStatusNode.isNull() ? ""
+                                    : variableStatusNode.asString();
                             if ("PENDING".equals(variableStatus)) {
                                 JsonNode variableTitleNode = variable.path("title");
                                 if (!variableTitleNode.isNull()) {
@@ -232,50 +290,47 @@ public class ProductReportService extends Service<Void> {
                 productoData.corregir = "";
             }
 
-            // Buscar en buckets → buscar bucket con type "USER_PRODUCT" para verificar
-            // video
+            // Buscar en buckets para verificar video
+            // El video puede aparecer en:
+            // 1. Bucket "USER_PRODUCT" → variable "UP_SHORTS" → rule "UP_HAS_SHORTS"
+            // 2. Bucket "CHARACTERISTICS" → variable "SHORTS" → rule "HAS_SHORTS"
             if (!buckets.isArray()) {
                 return "NO";
             }
 
             for (JsonNode bucket : buckets) {
-                JsonNode bucketTypeNode = bucket.path("type");
-                String bucketType = bucketTypeNode.isNull() ? "" : bucketTypeNode.asString();
+                JsonNode variables = bucket.path("variables");
+                if (!variables.isArray()) {
+                    continue;
+                }
 
-                // Buscar el bucket de tipo USER_PRODUCT
-                if ("USER_PRODUCT".equals(bucketType)) {
-                    JsonNode variables = bucket.path("variables");
-                    if (!variables.isArray()) {
-                        continue;
-                    }
+                // Buscar en todas las variables del bucket
+                for (JsonNode variable : variables) {
+                    JsonNode variableKeyNode = variable.path("key");
+                    String variableKey = variableKeyNode.isNull() ? "" : variableKeyNode.asString();
 
-                    // Buscar la variable con key "UP_SHORTS"
-                    for (JsonNode variable : variables) {
-                        JsonNode variableKeyNode = variable.path("key");
-                        String variableKey = variableKeyNode.isNull() ? "" : variableKeyNode.asString();
+                    // Buscar variable "SHORTS" o "UP_SHORTS"
+                    if ("SHORTS".equals(variableKey) || "UP_SHORTS".equals(variableKey)) {
+                        JsonNode rules = variable.path("rules");
+                        if (!rules.isArray()) {
+                            continue;
+                        }
 
-                        if ("UP_SHORTS".equals(variableKey)) {
-                            JsonNode rules = variable.path("rules");
-                            if (!rules.isArray()) {
-                                continue;
-                            }
+                        // Buscar la regla "HAS_SHORTS" o "UP_HAS_SHORTS"
+                        for (JsonNode rule : rules) {
+                            JsonNode ruleKeyNode = rule.path("key");
+                            String ruleKey = ruleKeyNode.isNull() ? "" : ruleKeyNode.asString();
 
-                            // Buscar la regla con key "UP_HAS_SHORTS"
-                            for (JsonNode rule : rules) {
-                                JsonNode ruleKeyNode = rule.path("key");
-                                String ruleKey = ruleKeyNode.isNull() ? "" : ruleKeyNode.asString();
+                            if ("HAS_SHORTS".equals(ruleKey) || "UP_HAS_SHORTS".equals(ruleKey)) {
+                                JsonNode statusNode = rule.path("status");
+                                String status = statusNode.isNull() ? "" : statusNode.asString();
 
-                                if ("UP_HAS_SHORTS".equals(ruleKey)) {
-                                    JsonNode statusNode = rule.path("status");
-                                    String status = statusNode.isNull() ? "" : statusNode.asString();
-
-                                    // Si el status es "COMPLETED", tiene video
-                                    if ("COMPLETED".equals(status)) {
-                                        return "SI";
-                                    } else {
-                                        // PENDING u otro estado = no tiene video
-                                        return "NO";
-                                    }
+                                // Si el status es "COMPLETED", tiene video
+                                if ("COMPLETED".equals(status)) {
+                                    return "SI";
+                                } else {
+                                    // PENDING u otro estado = no tiene video
+                                    return "NO";
                                 }
                             }
                         }
@@ -287,13 +342,14 @@ public class ProductReportService extends Service<Void> {
             return "NO";
 
         } catch (Exception e) {
-            AppLogger.error("Error al verificar video por performance para " + productoData.mla + ": " + e.getMessage(),
-                    e);
+            AppLogger.error("Error al verificar video por performance para " + productoData.mla
+                    + ": " + e.getMessage(), e);
             return "ERROR";
         }
     }
 
-    public static List<ProductoData> obtenerDatos() throws Exception, InterruptedException, IOException {
+    public static List<ProductoData> obtenerDatos()
+            throws Exception, InterruptedException, IOException {
 
         MercadoLibreAPI.inicializar();
 
@@ -314,8 +370,8 @@ public class ProductReportService extends Service<Void> {
                 if (producto != null) {
                     // Verificar si tiene variaciones (ya vienen en producto.variations)
                     if (producto.variations != null && !producto.variations.isEmpty()) {
-                        AppLogger.info(
-                                "ML - Item " + producto.id + " tiene " + producto.variations.size() + " variaciones");
+                        AppLogger.info("ML - Item " + producto.id + " tiene "
+                                + producto.variations.size() + " variaciones");
 
                         // Recorrer cada variación
                         for (Object variationObj : producto.variations) {
@@ -324,11 +380,13 @@ public class ProductReportService extends Service<Void> {
 
                             // Obtener user_product_id de la variación
                             JsonNode userProductIdNode = variation.path("user_product_id");
-                            String userProductId = userProductIdNode.isNull() ? null : userProductIdNode.asString("");
+                            String userProductId = userProductIdNode.isNull() ? null
+                                    : userProductIdNode.asString("");
 
                             if (userProductId != null && !userProductId.isEmpty()) {
                                 // Obtener datos de la variación usando getItemNodeByMLAU
-                                JsonNode variacionNode = MercadoLibreAPI.getItemNodeByMLAU(userProductId);
+                                JsonNode variacionNode =
+                                        MercadoLibreAPI.getItemNodeByMLAU(userProductId);
                                 if (variacionNode != null) {
                                     // Buscar el atributo SELLER_SKU en attributes
                                     String sku = extraerSkuDeVariacion(variacionNode);
@@ -340,11 +398,12 @@ public class ProductReportService extends Service<Void> {
                                             cantidadImagenes = pictureIdsNode.size();
                                         }
 
-                                        AppLogger.info("ML - Variación " + userProductId + " - SKU: " + sku
-                                                + " - Imágenes: " + cantidadImagenes);
+                                        AppLogger
+                                                .info("ML - Variación " + userProductId + " - SKU: "
+                                                        + sku + " - Imágenes: " + cantidadImagenes);
                                         // Agregar la variación como ProductoData
-                                        productoList
-                                                .add(new ProductoData(producto, userProductId, sku, cantidadImagenes));
+                                        productoList.add(new ProductoData(producto, userProductId,
+                                                sku, cantidadImagenes));
                                     }
                                 }
                             }
@@ -432,7 +491,8 @@ public class ProductReportService extends Service<Void> {
 
             if (!Files.isReadable(carpetaPath)) {
                 throw new IllegalArgumentException(
-                        "No se tienen permisos de lectura en la carpeta de " + tipoCarpeta + ": " + carpetaPath);
+                        "No se tienen permisos de lectura en la carpeta de " + tipoCarpeta + ": "
+                                + carpetaPath);
             }
 
             // Intentar listar el directorio para verificar acceso real (esto puede lanzar
@@ -446,8 +506,8 @@ public class ProductReportService extends Service<Void> {
                     "Acceso denegado a la carpeta de " + tipoCarpeta + ": " + rutaCarpeta, e);
         } catch (FileSystemException e) {
             throw new IllegalArgumentException(
-                    "Error del sistema de archivos al acceder a la carpeta de " + tipoCarpeta +
-                            " (verifica conectividad de red si es una ruta UNC): " + rutaCarpeta,
+                    "Error del sistema de archivos al acceder a la carpeta de " + tipoCarpeta
+                            + " (verifica conectividad de red si es una ruta UNC): " + rutaCarpeta,
                     e);
         } catch (IOException e) {
             throw new IllegalArgumentException(
@@ -455,6 +515,136 @@ public class ProductReportService extends Service<Void> {
         } catch (Exception e) {
             throw new IllegalArgumentException(
                     "Error al validar la carpeta de " + tipoCarpeta + ": " + rutaCarpeta, e);
+        }
+    }
+
+
+    private String verificarVideo(String url, String cookieHeader) {
+        return verificarVideo(url, cookieHeader, 0);
+    }
+
+    private String verificarVideo(String url, String cookieHeader, int intentos) {
+        // Límite de recursión para evitar StackOverflowError
+        if (intentos >= 5) {
+            AppLogger.warn("Límite de reintentos alcanzado para: " + url);
+            return "ERROR: Límite de reintentos alcanzado";
+        }
+
+        int status = 0;
+        try {
+            // Aplicar rate limiting para evitar bloqueos
+            videoRateLimiter.acquire();
+
+            final HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N)")
+                    .header("Accept",
+                            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
+                    .header("Accept-Language", "es-AR,es;q=0.9,en;q=0.8")
+                    .header("Referer", "https://www.mercadolibre.com.ar/")
+                    .header("Cookie", cookieHeader) // 👈 cookie
+                    .GET().build();
+
+            HttpResponse<String> response =
+                    httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            final String html = response.body();
+            status = response.statusCode();
+
+            switch (status) {
+                case 200:
+                    if (html.contains(BUSQUEDA)) {
+                        return "SI";
+                    } else {
+                        return "NO";
+                    }
+                case 301:
+                case 302:
+                case 303:
+                case 307:
+                case 308:
+                    if (html.startsWith("Moved Permanently") || html.contains("Redirecting to ")) {
+                        int idx = html.indexOf("Redirecting to ");
+                        if (idx != -1) {
+                            String newUrl = html.substring(idx + "Redirecting to ".length())
+                                    .replace("</p>", "").trim();
+                            // Reintentar con la nueva URL (si cambió)
+                            if (!newUrl.equals(request.uri().toString())) {
+                                AppLogger.info(
+                                        "URL vieja: " + url + " - URL actualizada: " + newUrl);
+                                return verificarVideo(newUrl, cookieHeader, intentos + 1);
+                            }
+                        }
+                    }
+                    break;
+                case 404:
+                case 410:
+                    return "NO EXISTE";
+                case 403:
+                case 424:
+                    AppLogger.info("Too many requests.");
+                    Thread.sleep(60000);
+                    return verificarVideo(url, cookieHeader, intentos + 1);
+                case 500:
+                case 502:
+                case 503:
+                case 504:
+                    AppLogger.info("Internal server error.");
+                    Thread.sleep(5000);
+                    return verificarVideo(url, cookieHeader, intentos + 1);
+                default:
+                    return "STATUS: " + status;
+            }
+        } catch (Exception e) {
+            AppLogger.error(
+                    "Error en url: " + url + " - status: " + status + " -> " + e.getMessage(), e);
+            return "ERROR: " + e.getMessage();
+        }
+
+        return "ERROR: " + status;
+    }
+
+    public static boolean cookiesValidas(String cookieHeader) {
+        try {
+            HttpClient client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER) // importante
+                    .build();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://www.mercadolibre.com.ar/pampa/profile"))
+                    .header("User-Agent", "Mozilla/5.0").header("Cookie", cookieHeader).GET()
+                    .build();
+
+            HttpResponse<String> response =
+                    client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            int status = response.statusCode();
+
+            // ============================
+            // VALIDACIONES DE LOGIN
+            // ============================
+
+            // 302 → redirige al login → NO logeado
+            if (status == 302)
+                return false;
+
+            // 401 o 403 → NO autorizado → NO logeado
+            if (status == 401 || status == 403)
+                return false;
+
+            // 200 → verificar contenido
+            if (status == 200) {
+                String body = response.body();
+                // si contiene datos personales → usuario logeado
+                if (body.contains("myaccount") || body.contains("Mi cuenta")
+                        || body.contains("profile")) {
+                    return true;
+                }
+            }
+
+            return false;
+
+        } catch (Exception e) {
+            AppLogger.error("Error verificando cookies: " + e.getMessage(), e);
+            return false;
         }
     }
 
