@@ -77,7 +77,7 @@ public class ConclusionGenerator {
                     // Hay más de 6 imágenes en carpeta
                     return "SUBIR " + imagenesFaltantes + " "
                             + (imagenesFaltantes == 1 ? "imagen" : "imágenes")
-                            + "  (se pueden subir hasta "
+                            + " (se pueden subir hasta "
                             + (cantidadImagenesCarpeta - cantidadImagenesML) + " más)";
                 }
             }
