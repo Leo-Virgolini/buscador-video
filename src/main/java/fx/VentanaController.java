@@ -113,7 +113,7 @@ public class VentanaController implements Initializable {
         File lastFile = new File(prefs.get("ubicacionExcel", ""));
         File initialDir =
                 (lastFile.exists() && lastFile.getParentFile() != null) ? lastFile.getParentFile()
-                        : new File(System.getProperty("user.dir"));
+                : new File(System.getProperty("user.dir"));
 
         fileChooser.setInitialDirectory(initialDir);
 

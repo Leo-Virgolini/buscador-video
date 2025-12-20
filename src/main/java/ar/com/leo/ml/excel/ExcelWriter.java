@@ -52,6 +52,9 @@ public class ExcelWriter {
             header = sheet.createRow(0);
         }
 
+        Workbook workbook = sheet.getWorkbook();
+        CellStyle headerStyleRojo = ExcelStyleManager.crearHeaderStyleRojo(workbook);
+
         // Columnas fijas
         header.createCell(0).setCellValue("ESTADO");
         header.createCell(1).setCellValue("MLA");
@@ -67,14 +70,22 @@ public class ExcelWriter {
         header.createCell(11).setCellValue("SCORE");
         header.createCell(12).setCellValue("NIVEL");
 
-        // Columnas dinámicas basadas en variable keys
+        // Aplicar estilo normal a columnas fijas (0-12)
+        for (int i = 0; i <= 12; i++) {
+            Cell cell = header.getCell(i);
+            if (cell != null) {
+                cell.setCellStyle(headerStyle);
+            }
+        }
+
+        // Columnas dinámicas basadas en variable keys (con texto rojo)
         List<String> variableKeys = recolectarVariableKeys(productoList);
         int colIndex = 13; // Empezar después de NIVEL
         for (String variableKey : variableKeys) {
-            header.createCell(colIndex++).setCellValue(variableKey);
+            Cell cell = header.createCell(colIndex++);
+            cell.setCellValue(variableKey);
+            cell.setCellStyle(headerStyleRojo);
         }
-
-        ExcelStyleManager.aplicarStyleFila(header, headerStyle);
     }
 
     /**

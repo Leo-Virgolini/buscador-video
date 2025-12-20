@@ -45,6 +45,36 @@ public class ExcelStyleManager {
     }
 
     /**
+     * Crea un estilo para encabezados de columnas dinámicas con fondo gris, texto en negrita,
+     * centrado y color rojo.
+     */
+    public static CellStyle crearHeaderStyleRojo(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+
+        // Negrita y color rojo
+        XSSFFont font = ((XSSFWorkbook) workbook).createFont();
+        font.setBold(true);
+        font.setColor(IndexedColors.RED.getIndex());
+        style.setFont(font);
+
+        // Fondo gris claro
+        style.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+        // Centrados
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(VerticalAlignment.CENTER);
+
+        // Bordes finos
+        style.setBorderTop(BorderStyle.THIN);
+        style.setBorderBottom(BorderStyle.THIN);
+        style.setBorderLeft(BorderStyle.THIN);
+        style.setBorderRight(BorderStyle.THIN);
+
+        return style;
+    }
+
+    /**
      * Crea un estilo centrado con bordes.
      */
     public static CellStyle crearCenteredStyle(Workbook workbook) {
