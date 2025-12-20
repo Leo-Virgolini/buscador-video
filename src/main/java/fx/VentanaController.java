@@ -15,6 +15,12 @@ import java.util.prefs.Preferences;
 
 import ar.com.leo.AppLogger;
 import ar.com.leo.ml.ProductReportService;
+import javafx.geometry.Insets;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
+import javafx.application.Platform;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 
 public class VentanaController implements Initializable {
 
@@ -254,6 +260,134 @@ public class VentanaController implements Initializable {
         });
 
         service.start();
+    }
+
+    /**
+     * Muestra un diálogo para solicitar el código de autorización de MercadoLibre.
+     * 
+     * @param authURL La URL de autorización que el usuario debe abrir
+     * @return El código de autorización ingresado por el usuario, o null si canceló
+     */
+    public static String mostrarDialogoAutorizacion(String authURL) {
+        // Crear TextInputDialog
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Autorización de MercadoLibre");
+        dialog.setHeaderText("Autorización requerida");
+
+        // Configurar el diálogo para que no se cierre automáticamente si el campo está vacío
+        // Esto permite que el usuario cancele explícitamente
+        dialog.getDialogPane().lookupButton(ButtonType.OK).setDisable(false);
+
+        // Crear contenido personalizado con URL seleccionable
+        VBox vbox = new VBox(10);
+        vbox.setPadding(new Insets(10));
+
+        // Label con instrucciones
+        Label label1 = new Label("1. Abra esta URL en su navegador:");
+        vbox.getChildren().add(label1);
+
+        // HBox para URL y botón copiar
+        HBox urlBox = new HBox(5);
+        TextField urlField = new TextField(authURL);
+        urlField.setEditable(false);
+        urlField.setStyle("-fx-background-color: #f0f0f0;");
+
+        Button copyButton = new Button("Copiar");
+        copyButton.setOnAction(e -> {
+            try {
+                java.awt.Toolkit.getDefaultToolkit()
+                        .getSystemClipboard()
+                        .setContents(new java.awt.datatransfer.StringSelection(authURL), null);
+                AppLogger.info("URL copiada al portapapeles");
+            } catch (Exception ex) {
+                AppLogger.warn("No se pudo copiar al portapapeles: " + ex.getMessage());
+            }
+        });
+
+        urlBox.getChildren().addAll(urlField, copyButton);
+        vbox.getChildren().add(urlBox);
+
+        // Label con instrucción para el código
+        Label label2 = new Label("2. Después de autorizar, pegue el código aquí:");
+        vbox.getChildren().add(label2);
+
+        // Configurar el diálogo para usar el contenido personalizado
+        dialog.setGraphic(vbox);
+        dialog.getEditor().setPromptText("Ingrese el código de autorización...");
+
+        // Mostrar diálogo y obtener resultado
+        Optional<String> result = dialog.showAndWait();
+
+        // Verificar resultado
+        // Si el usuario cerró el diálogo sin ingresar código, result.isPresent() será false
+        // Si el usuario hizo clic en OK pero dejó el campo vacío, result.isPresent() será true pero el string estará vacío
+        if (!result.isPresent()) {
+            // Usuario cerró el diálogo (X o Cancelar)
+            return null;
+        }
+
+        String code = result.get();
+        if (code != null && !code.trim().isEmpty()) {
+            return code.trim();
+        }
+
+        // Usuario hizo clic en OK pero no ingresó código
+        return null;
+    }
+
+    /**
+     * Solicita el código de autorización usando JavaFX.
+     * Maneja la ejecución en el hilo correcto de JavaFX.
+     * 
+     * @param authURL La URL de autorización
+     * @return El código de autorización ingresado por el usuario
+     * @throws RuntimeException Si el usuario canceló o hubo un error
+     */
+    public static String pedirCodeConJavaFX(String authURL) {
+        // Verificar si ya estamos en el hilo de JavaFX
+        if (Platform.isFxApplicationThread()) {
+            // Ya estamos en el hilo de JavaFX, mostrar el diálogo directamente
+            String code = mostrarDialogoAutorizacion(authURL);
+            if (code == null || code.trim().isEmpty()) {
+                throw new RuntimeException("El usuario canceló la autorización");
+            }
+            return code.trim();
+        } else {
+            // No estamos en el hilo de JavaFX, usar Platform.runLater
+            final String[] codeResult = new String[1];
+            final RuntimeException[] exceptionResult = new RuntimeException[1];
+            final CountDownLatch latch = new CountDownLatch(1);
+
+            Platform.runLater(() -> {
+                try {
+                    codeResult[0] = mostrarDialogoAutorizacion(authURL);
+                } catch (RuntimeException e) {
+                    exceptionResult[0] = e;
+                } catch (Exception e) {
+                    exceptionResult[0] = new RuntimeException("Error al mostrar diálogo", e);
+                } finally {
+                    latch.countDown();
+                }
+            });
+
+            try {
+                // Esperar a que se complete el diálogo
+                latch.await();
+
+                if (exceptionResult[0] != null) {
+                    throw exceptionResult[0];
+                }
+
+                if (codeResult[0] == null || codeResult[0].trim().isEmpty()) {
+                    throw new RuntimeException("El usuario canceló la autorización");
+                }
+
+                return codeResult[0].trim();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupción mientras se esperaba el diálogo", e);
+            }
+        }
     }
 
 }

@@ -364,7 +364,10 @@ public class ProductReportService extends Service<Void> {
     public static List<ProductoData> obtenerDatos()
             throws Exception, InterruptedException, IOException {
 
-        MercadoLibreAPI.inicializar();
+        if (!MercadoLibreAPI.inicializar()) {
+            throw new IllegalStateException(
+                    "No se pudo inicializar la API de MercadoLibre. Verificar credenciales y tokens.");
+        }
 
         final String userId = MercadoLibreAPI.getUserId();
         AppLogger.info("User ID: " + userId);

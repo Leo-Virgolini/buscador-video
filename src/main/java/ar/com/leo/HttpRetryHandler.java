@@ -18,7 +18,8 @@ import java.util.function.Supplier;
 public class HttpRetryHandler {
 
     public static final Path BASE_SECRET_DIR = Paths.get(
-            System.getenv("PROGRAMDATA") != null ? System.getenv("PROGRAMDATA") : System.getProperty("java.io.tmpdir"),
+            System.getenv("PROGRAMDATA") != null ? System.getenv("PROGRAMDATA")
+                    : System.getProperty("java.io.tmpdir"),
             "SuperMaster", "secrets");
     private static final Logger logger = LogManager.getLogger(HttpRetryHandler.class);
     private static final int MAX_RETRIES = 3; // cantidad máxima de reintentos
@@ -74,7 +75,8 @@ public class HttpRetryHandler {
                         return response;
                     }
                     // Si se resolvió el 429, continuar con el flujo normal
-                    if (response != null && response.statusCode() >= 200 && response.statusCode() < 300) {
+                    if (response != null && response.statusCode() >= 200
+                            && response.statusCode() < 300) {
                         return response;
                     }
                     // Si hay otro error, continuar con el loop normal
@@ -94,7 +96,8 @@ public class HttpRetryHandler {
 
             } catch (IOException e) {
                 long waitMs = BASE_WAIT_MS * (long) Math.pow(2, attempt - 1);
-                logger.warn("IOException. Retry en " + waitMs + " ms... (" + attempt + "/" + MAX_RETRIES + ")");
+                logger.warn("IOException. Retry en " + waitMs + " ms... (" + attempt + "/"
+                        + MAX_RETRIES + ")");
                 try {
                     Thread.sleep(waitMs);
                 } catch (InterruptedException ex) {
@@ -115,13 +118,15 @@ public class HttpRetryHandler {
         for (int retry429 = 1; retry429 <= MAX_RETRIES_429; retry429++) {
             try {
                 long waitMs = parseRetryAfter(lastResponse, BASE_WAIT_MS);
-                logger.warn("429 Too Many Requests. Retry " + retry429 + "/" + MAX_RETRIES_429 + " en " + waitMs
+                logger.warn("429 Too Many Requests. Retry " + retry429 + "/" + MAX_RETRIES_429
+                        + " en " + waitMs
                         + " ms...");
                 Thread.sleep(waitMs);
 
                 rateLimiter.acquire();
                 HttpRequest request = requestSupplier.get();
-                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> response =
+                        client.send(request, HttpResponse.BodyHandlers.ofString());
 
                 if (response.statusCode() >= 200 && response.statusCode() < 300) {
                     return response; // Éxito
@@ -153,7 +158,8 @@ public class HttpRetryHandler {
                 try {
                     // si es fecha → calcular diferencia
                     long epoch = ZonedDateTime
-                            .parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant()
+                            .parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+                            .toInstant()
                             .toEpochMilli();
 
                     return Math.max(epoch - System.currentTimeMillis(), defaultMs);
