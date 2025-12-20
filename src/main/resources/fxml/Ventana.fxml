@@ -39,7 +39,7 @@
                   <Font name="Arial Bold" size="13.0" />
                </font>
             </Label>
-            <TextField fx:id="ubicacionCarpetaImagenes" alignment="TOP_LEFT" editable="false" focusTraversable="false" layoutX="10.0" layoutY="78.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona carpeta de imágenes..." style="-fx-background-color: #242831; -fx-text-fill: white;">
+            <TextField fx:id="ubicacionCarpetaImagenes" alignment="TOP_LEFT" editable="false" focusTraversable="false" layoutX="10.0" layoutY="78.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona la carpeta raíz de imágenes..." style="-fx-background-color: #242831; -fx-text-fill: white;">
                <font>
                   <Font name="Roboto" size="13.0" />
                </font>
@@ -65,7 +65,7 @@
                   <Font name="Arial Bold" size="13.0" />
                </font>
             </Label>
-            <TextField fx:id="ubicacionCarpetaVideos" editable="false" focusTraversable="false" layoutX="10.0" layoutY="133.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona carpeta de videos/clips..." style="-fx-background-color: #242831; -fx-text-fill: white;">
+            <TextField fx:id="ubicacionCarpetaVideos" editable="false" focusTraversable="false" layoutX="10.0" layoutY="133.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona la carpeta raíz de videos/clips..." style="-fx-background-color: #242831; -fx-text-fill: white;">
                <font>
                   <Font name="Roboto" size="13.0" />
                </font>
@@ -90,7 +90,7 @@
                   <Font name="Arial Bold" size="13.0" />
                </font>
             </Label>
-            <TextField fx:id="ubicacionExcel" editable="false" focusTraversable="false" layoutX="10.0" layoutY="23.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona archivo Excel..." style="-fx-background-color: #242831; -fx-text-fill: white;">
+            <TextField fx:id="ubicacionExcel" editable="false" focusTraversable="false" layoutX="10.0" layoutY="23.0" prefHeight="27.0" prefWidth="700.0" promptText="Selecciona archivo Excel Matriz..." style="-fx-background-color: #242831; -fx-text-fill: white;">
                <font>
                   <Font name="Roboto" size="13.0" />
                </font>

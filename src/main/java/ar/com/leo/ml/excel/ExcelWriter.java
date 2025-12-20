@@ -3,7 +3,7 @@ package ar.com.leo.ml.excel;
 import ar.com.leo.ml.model.ProductoData;
 import org.apache.poi.ss.usermodel.*;
 
-import java.util.List;
+import java.util.*;
 
 /**
  * Maneja la escritura de datos de productos al archivo Excel.
@@ -11,14 +11,15 @@ import java.util.List;
 public class ExcelWriter {
 
     /**
-     * Limpia las filas existentes en la hoja (excepto el encabezado).
+     * Limpia las filas existentes en la hoja, incluyendo el encabezado.
+     * Los headers se regeneran dinámicamente basados en los datos de los productos.
      */
     public static void limpiarDatosExistentes(Sheet sheet) {
         int lastRowNum = sheet.getLastRowNum();
-        if (lastRowNum > 0) {
-            // Eliminar filas desde la última hasta la primera (excepto fila 0 que es el encabezado)
+        if (lastRowNum >= 0) {
+            // Eliminar todas las filas, incluyendo el encabezado (fila 0)
             // Usar removeRow en lugar de shiftRows para evitar problemas con muchas filas
-            for (int i = lastRowNum; i > 0; i--) {
+            for (int i = lastRowNum; i >= 0; i--) {
                 Row row = sheet.getRow(i);
                 if (row != null) {
                     sheet.removeRow(row);
@@ -28,13 +29,30 @@ public class ExcelWriter {
     }
 
     /**
-     * Crea los encabezados de las columnas en la hoja.
+     * Recolecta todas las variable keys de todos los productos para crear columnas dinámicas.
      */
-    public static void crearEncabezados(Sheet sheet, CellStyle headerStyle) {
+    private static List<String> recolectarVariableKeys(List<ProductoData> productoList) {
+        Set<String> keysSet = new LinkedHashSet<>(); // LinkedHashSet para mantener orden
+        for (ProductoData p : productoList) {
+            if (p.corregir != null && !p.corregir.isEmpty()) {
+                keysSet.addAll(p.corregir.keySet());
+            }
+        }
+        return new ArrayList<>(keysSet);
+    }
+
+    /**
+     * Crea los encabezados de las columnas en la hoja.
+     * Incluye columnas fijas y columnas dinámicas basadas en variable keys.
+     */
+    public static void crearEncabezados(Sheet sheet, CellStyle headerStyle,
+            List<ProductoData> productoList) {
         Row header = sheet.getRow(0);
         if (header == null) {
             header = sheet.createRow(0);
         }
+
+        // Columnas fijas
         header.createCell(0).setCellValue("ESTADO");
         header.createCell(1).setCellValue("MLA");
         header.createCell(2).setCellValue("IMAGENES");
@@ -48,7 +66,13 @@ public class ExcelWriter {
         header.createCell(10).setCellValue("CONCLUSION VIDEOS");
         header.createCell(11).setCellValue("SCORE");
         header.createCell(12).setCellValue("NIVEL");
-        header.createCell(13).setCellValue("CORREGIR");
+
+        // Columnas dinámicas basadas en variable keys
+        List<String> variableKeys = recolectarVariableKeys(productoList);
+        int colIndex = 13; // Empezar después de NIVEL
+        for (String variableKey : variableKeys) {
+            header.createCell(colIndex++).setCellValue(variableKey);
+        }
 
         ExcelStyleManager.aplicarStyleFila(header, headerStyle);
     }
@@ -58,6 +82,9 @@ public class ExcelWriter {
      */
     public static void escribirProductos(Sheet sheet, List<ProductoData> productoList,
             Workbook workbook, CellStyle centeredStyle) {
+        // Recolectar todas las variable keys para mantener el mismo orden que en los headers
+        List<String> variableKeys = recolectarVariableKeys(productoList);
+
         int rowNum = 1;
         for (ProductoData p : productoList) {
             Row row = sheet.createRow(rowNum++);
@@ -97,8 +124,15 @@ public class ExcelWriter {
             // Aplicar estilo según el nivel
             cellNivel.setCellStyle(ExcelStyleManager.obtenerEstiloPorNivel(workbook, p.nivel));
 
-            // CORREGIR: títulos de keys con status PENDING (última columna), si es null poner "N/A"
-            row.createCell(13).setCellValue(p.corregir != null ? p.corregir : "N/A");
+            // Columnas dinámicas: escribir el valor para cada variable key
+            int colIndex = 13; // Empezar después de NIVEL
+            for (String variableKey : variableKeys) {
+                String value = "";
+                if (p.corregir != null && p.corregir.containsKey(variableKey)) {
+                    value = p.corregir.get(variableKey);
+                }
+                row.createCell(colIndex++).setCellValue(value);
+            }
 
             // Aplicar estilo a todas las celdas excepto SCORE y NIVEL (que ya tienen su estilo)
             ExcelStyleManager.aplicarStyleFilaExcluyendo(row, centeredStyle, 11, 12);
@@ -107,10 +141,15 @@ public class ExcelWriter {
 
     /**
      * Ajusta el ancho de todas las columnas automáticamente.
+     * Ajusta las columnas fijas (0-12) más las columnas dinámicas.
      */
     public static void ajustarAnchoColumnas(Sheet sheet) {
-        for (int i = 0; i <= 13; i++) {
-            sheet.autoSizeColumn(i);
+        Row header = sheet.getRow(0);
+        if (header != null) {
+            int lastCellNum = header.getLastCellNum();
+            for (int i = 0; i < lastCellNum; i++) {
+                sheet.autoSizeColumn(i);
+            }
         }
     }
 }

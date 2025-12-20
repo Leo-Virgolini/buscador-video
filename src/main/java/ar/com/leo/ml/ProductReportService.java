@@ -147,10 +147,11 @@ public class ProductReportService extends Service<Void> {
         try {
             Sheet scanSheet = ExcelManager.obtenerHojaEscaneo(workbook);
 
-            // Limpiar datos existentes (excepto encabezado)
+            // Limpiar datos existentes (incluyendo encabezado, se regenerarán con columnas dinámicas)
             int lastRowNum = scanSheet.getLastRowNum();
-            if (lastRowNum > 0) {
-                AppLogger.info("Limpiando " + lastRowNum + " filas existentes...");
+            if (lastRowNum >= 0) {
+                AppLogger.info("Limpiando " + (lastRowNum + 1)
+                        + " filas existentes...");
             }
             ExcelWriter.limpiarDatosExistentes(scanSheet);
 
@@ -158,8 +159,8 @@ public class ProductReportService extends Service<Void> {
             CellStyle headerStyle = ExcelStyleManager.crearHeaderStyle(workbook);
             CellStyle centeredStyle = ExcelStyleManager.crearCenteredStyle(workbook);
 
-            // Crear encabezados
-            ExcelWriter.crearEncabezados(scanSheet, headerStyle);
+            // Crear encabezados (necesita la lista de productos para crear columnas dinámicas)
+            ExcelWriter.crearEncabezados(scanSheet, headerStyle, productoList);
 
             // Escribir productos
             ExcelWriter.escribirProductos(scanSheet, productoList, workbook, centeredStyle);
@@ -219,7 +220,7 @@ public class ProductReportService extends Service<Void> {
                 // Establecer valores como "N/A" para indicar que no están disponibles
                 productoData.score = null; // Se mantiene null para que ExcelWriter lo maneje
                 productoData.nivel = "N/A";
-                productoData.corregir = "N/A";
+                // El Map ya está inicializado vacío, no necesita "N/A"
 
                 if (productoData.permalink != null && !productoData.permalink.isEmpty()) {
                     return verificarVideo(productoData.permalink, cookieHeader);
@@ -257,7 +258,7 @@ public class ProductReportService extends Service<Void> {
             }
 
             // Extraer títulos de wordings.title de rules dentro de variables con status PENDING
-            List<String> titulosPendientes = new ArrayList<>();
+            // Guardar por variable key en el Map
             JsonNode buckets = performance.path("buckets");
             if (buckets.isArray()) {
                 for (JsonNode bucket : buckets) {
@@ -269,38 +270,61 @@ public class ProductReportService extends Service<Void> {
                             String variableStatus = variableStatusNode.isNull() ? ""
                                     : variableStatusNode.asString();
                             if ("PENDING".equals(variableStatus)) {
-                                // Buscar en las rules de la variable
-                                JsonNode rules = variable.path("rules");
-                                if (rules.isArray()) {
-                                    for (JsonNode rule : rules) {
-                                        // Extraer el title de wordings.title
-                                        JsonNode wordingsNode = rule.path("wordings");
-                                        if (!wordingsNode.isNull() && wordingsNode.isObject()) {
-                                            JsonNode wordingTitleNode = wordingsNode.path("title");
-                                            if (!wordingTitleNode.isNull()) {
-                                                String wordingTitle = wordingTitleNode.asString("");
-                                                if (wordingTitle != null
-                                                        && !wordingTitle.isEmpty()) {
-                                                    // Evitar duplicados
-                                                    if (!titulosPendientes.contains(wordingTitle)) {
-                                                        titulosPendientes.add(wordingTitle);
+                                // Obtener la key de la variable
+                                JsonNode variableKeyNode = variable.path("key");
+                                String variableKey =
+                                        variableKeyNode.isNull() ? "" : variableKeyNode.asString();
+
+                                if (!variableKey.isEmpty()) {
+                                    // Quitar el prefijo "UP_" si existe para unificar con columnas sin prefijo
+                                    if (variableKey.startsWith("UP_")) {
+                                        variableKey = variableKey.substring(3); // Quitar "UP_"
+                                    }
+
+                                    // Buscar en las rules de la variable para obtener todos los títulos con status PENDING
+                                    List<String> titulosPendientes = new ArrayList<>();
+                                    JsonNode rules = variable.path("rules");
+                                    if (rules.isArray()) {
+                                        for (JsonNode rule : rules) {
+                                            // Verificar que la rule tenga status PENDING
+                                            JsonNode ruleStatusNode = rule.path("status");
+                                            String ruleStatus = ruleStatusNode.isNull() ? ""
+                                                    : ruleStatusNode.asString();
+                                            if ("PENDING".equals(ruleStatus)) {
+                                                // Extraer el title de wordings.title
+                                                JsonNode wordingsNode = rule.path("wordings");
+                                                if (!wordingsNode.isNull()
+                                                        && wordingsNode.isObject()) {
+                                                    JsonNode wordingTitleNode =
+                                                            wordingsNode.path("title");
+                                                    if (!wordingTitleNode.isNull()) {
+                                                        String wordingTitle =
+                                                                wordingTitleNode.asString("");
+                                                        if (wordingTitle != null
+                                                                && !wordingTitle.isEmpty()) {
+                                                            // Evitar duplicados
+                                                            if (!titulosPendientes
+                                                                    .contains(wordingTitle)) {
+                                                                titulosPendientes.add(wordingTitle);
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
                                         }
+                                    }
+
+                                    // Concatenar todos los títulos con " | " y guardar en el Map
+                                    if (!titulosPendientes.isEmpty()) {
+                                        String titulosConcatenados =
+                                                String.join(" | ", titulosPendientes);
+                                        productoData.corregir.put(variableKey, titulosConcatenados);
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
-
-            // Unir los títulos con " | " y guardar en productoData
-            if (!titulosPendientes.isEmpty()) {
-                productoData.corregir = String.join(" | ", titulosPendientes);
-            } else {
-                productoData.corregir = "";
             }
 
             // Buscar en buckets para verificar video

@@ -3,6 +3,9 @@ package ar.com.leo.ml.model;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Clase para almacenar los datos que van al Excel.
  * Representa tanto productos principales como variaciones.
@@ -23,7 +26,7 @@ public class ProductoData {
                                       // catálogo)
     public Integer score; // Score del producto (del performance)
     public String nivel; // Nivel del producto (level_wording del performance)
-    public String corregir; // Títulos de keys con status PENDING (separados por " | ")
+    public Map<String, String> corregir; // Map<variableKey, title> para variables con status PENDING
 
     /**
      * Extrae el MLA de item_relations si es catálogo, sino devuelve el MLA normal
@@ -64,7 +67,7 @@ public class ProductoData {
         this.mlaParaPerformance = obtenerMlaParaPerformance(producto);
         this.score = null;
         this.nivel = null;
-        this.corregir = null;
+        this.corregir = new HashMap<>();
     }
 
     /**
@@ -91,6 +94,6 @@ public class ProductoData {
         this.mlaParaPerformance = productoPadre.id;
         this.score = null;
         this.nivel = null;
-        this.corregir = null;
+        this.corregir = new HashMap<>();
     }
 }

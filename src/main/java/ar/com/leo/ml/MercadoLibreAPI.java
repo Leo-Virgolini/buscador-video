@@ -57,8 +57,8 @@ public class MercadoLibreAPI {
         // JsonNode itemNodeU = MercadoLibreAPI.getItemNodeByMLAU("MLAU2923718381");
         // System.out.println(itemNodeU.toPrettyString());
 
-        // JsonNode performance = MercadoLibreAPI.getItemPerformanceByMLA("MLA2306667754");
-        // System.out.println(performance.toPrettyString());
+        JsonNode performance = MercadoLibreAPI.getItemPerformanceByMLA("MLA1100172041");
+        System.out.println(performance.toPrettyString());
 
         // JsonNode performance = MercadoLibreAPI.getItemPerformanceByMLAU("MLAU3011744069");
         // System.out.println(performance.toPrettyString());
